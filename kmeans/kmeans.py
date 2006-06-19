@@ -18,13 +18,20 @@ def moments(data):
     return x,x2-x*x
 
 
+def generateModels(n,modelKlass,mu,sigma):
+    return [modelKlass(random.random()*mu,random.random()*sigma) for i in range(n)]
+
 
 class TestData(list):
-    def __init__(self,n,probs,models):
+    def __init__(self,n,models,probs=None):
         '''TestData(n,probs,models) takes three arguments:
           n: number of observations to generate
           probs: list of probabilities, should sum to 1.0
           models: list of model objects'''
+        if probs is None: # GENERATE RANDOM PROBABILITIES
+            l=[random.random() for i in range(len(models))]
+            s=sum(l)
+            probs=map(lambda x:x/s,l) # NORMALIZE PROBABILITIES
         self.probs=probs
         self.models=models
         list.__init__(self)
@@ -32,9 +39,80 @@ class TestData(list):
         for i in range(len(models)):
             self+=[x for x in models[i].rvs(counts[i])]
         self.counts=counts
-        random.shuffle(self)
+        self.sort()
+        #random.shuffle(self)
         #self.priors=len(models)*[1./len(models)]
 
+
+class ObsDensity(list):
+    def __init__(self,data,maxshift=1.5):
+        'data must be sorted!!'
+        list.__init__(self)  # CALL DEFAULT CONSTRUCTOR
+        left=None
+        last=data[0]
+        count=0.
+        p=1./len(data)
+        for x in data[1:]:
+            right=float(x+last)/2.
+            count+=p
+            if left is None: # 1ST VALUE
+                left=last
+            elif last==x: # JUST COUNT IDENTICAL VALUES
+                continue
+            elif (last-left)/float(right-last)>maxshift:
+                self.append([left,last-(right-last),(left+last-(right-last))/2.,0.])
+                left=last-(right-last)
+            elif float(right-last)/(last-left)>maxshift:
+                right=last+last-left
+            self.append([left,right,last,count]) # SAVE INTERVAL AROUND last
+            left=right
+            last=x
+            count=0.
+        self.append([left,last,last,p]) # SAVE LAST VALUE
+
+    def smoothDensity(self,w):
+        start=0
+        l=[0. for x in self] # INITIALIZE DENSITY TO ZEROES
+        for left,right,x,p in self:
+            while self[start][1]<=x-w: # SKIP PAST NON-OVERLAPPING INTERVALS
+                start+=1
+            if self[start][0]>x-w: # INCOMPLETE COVERAGE
+                dw=x-w-self[start][0] # NOT ABLE TO COVER THIS AMOUNT
+            else:
+                dw=0.
+            i=start
+            while i<len(self) and self[i][0]<x+w: # FIND LAST OVERLAPPING INTERVALS
+                i+=1
+            if i>0 and self[i-1][1]<x+w: # INCOMPLETE COVERAGE
+                dw+=x+w-self[i-1][1] # NOT ABLE TO COVER THIS AMOUNT
+            i=start
+            p/=2*w-dw # TRANSFORM INTO DENSITY, TO SPREAD OVER INTERVAL [x-w,x+w]
+            while i<len(self) and self[i][0]<x+w: # FIND ALL OVERLAPPING INTERVALS
+                if x-w>self[i][0]: # FIND OVERLAP START AND STOP
+                    left=x-w
+                else:
+                    left=self[i][0]
+                if x+w<self[i][1]:
+                    right=x+w
+                else:
+                    right=self[i][1]
+                l[i]+=p*(right-left)
+                i+=1
+        for i in range(len(self)): # SAVE THE FINAL SMOOTHED DENSITY
+            self[i][3]=l[i]
+
+    def relativeEntropy(self,model):
+        'compute relative entropy contribution of each density slice, as list'
+        d=0.
+        l=[]
+        for left,right,x,p in self:
+            if p>0.:
+                dd=p*log(p/((right-left)*model.pdf(x)))
+            else:
+                dd=0.
+            d+=dd
+            l.append(dd)
+        return d,l
 
 class Model(object):
     'wrapper for a distribution, adds update() method'
@@ -68,6 +146,9 @@ class RootModel(object):
     def computeP(self,data):
         return len(data)*log(self.delta/self.w)
 
+    def pdf(self,x):
+        return 1./self.w
+
 class ModelLayer(list):
     '''Takes data list as obs, and acts as list of models of these obs'''
     def __init__(self,k,data,parent,delta,logConfidence=log(100.)):
@@ -90,6 +171,15 @@ class ModelLayer(list):
         self.delta=delta
         self.lastP=self.parent.computeP(self.data) # COMPUTE LOG-P IN PARENT
 
+    def pdf(self,x,models=None):
+        'return Pr(x) according to total PDF for this model layer'
+        if models is None:
+            models=self.models
+        p=0.
+        for model in models:
+            p+=model.prior*model.pdf(x)
+        return p
+        
 
     def computeP(self,data,models=None):
         '''Return log-P for all items in data list'''
