@@ -17,6 +17,25 @@ def moments(data):
     x2/=n
     return x,x2-x*x
 
+def weightedMoments(data,w,minSigma=.01):
+    'compute data [(mu, sigma)],[n] for each model in w'
+    x=[[0.,0.] for l in w]
+    n=[sum(l) for l in w]
+    i=0
+    for y in data: # SUM 1ST AND 2ND MOMENTS
+        for j in range(len(w)):
+            x[j][0]+=y*w[j][i]
+            x[j][1]+=y*y*w[j][i]
+        i+=1
+    for j in range(len(w)): # COMPUTE MU, SIGMA, AND TRUNCATE SIGMA
+        x[j][0]/=n[j]
+        x[j][1]=x[j][1]/n[j] -x[j][0]*x[j][0]
+        if x[j][1]>minSigma*minSigma:
+            x[j][1]=sqrt(x[j][1])
+        else:
+            x[j][1]=minSigma
+    return x,n
+
 
 def generateModels(n,modelKlass,mu,sigma):
     return [modelKlass(random.random()*mu,random.random()*sigma) for i in range(n)]
@@ -144,10 +163,13 @@ class RootModel(object):
         self.delta=delta
 
     def computeP(self,data):
-        return len(data)*log(self.delta/self.w)
+        return len(data)*log(self.delta/self.w),(1./self.w,)*len(data),(1.,)*len(data)
 
     def pdf(self,x):
-        return 1./self.w
+        try: # HANDLE x AS LIST OF VALUES
+            return (1./self.w,)*len(x)
+        except TypeError: # HANDLE x AS AN INDIVIDUAL VALUE
+            return 1./self.w
 
 class ModelLayer(list):
     '''Takes data list as obs, and acts as list of models of these obs'''
@@ -165,36 +187,146 @@ class ModelLayer(list):
         parent.data=self
         #var,mean,l=self.bestmodel(data,len(data),1)
         #model0=stats.norm(mean,sqrt(var))
-        self.models=[Model(self)]
-        self.priors=[1.]
+        #self.models=[Model(self)]
+        self.models=[]  # INITIALLY, MODEL IS EMPTY!
+        self.w=[]
         self.logConfidence=logConfidence
         self.delta=delta
-        self.lastP=self.parent.computeP(self.data) # COMPUTE LOG-P IN PARENT
+        self.lastP=self.computeP(self.data)[0] # COMPUTE LOG-P IN PARENT
 
     def pdf(self,x,models=None):
         'return Pr(x) according to total PDF for this model layer'
         if models is None:
             models=self.models
+        try: # HANDLE x AS LIST OF VALUES
+            return [self.pdf(y,models) for y in x]
+        except TypeError: pass # HANDLE x AS AN INDIVIDUAL VALUE
         p=0.
+        prior=1.
         for model in models:
             p+=model.prior*model.pdf(x)
+            prior-=model.prior
+        if prior>0.: # ADD COMPONENT DERIVED FROM PARENT DISTRIBUTION, IF ANY
+            p+=prior*self.parent.pdf(x)
         return p
         
 
     def computeP(self,data,models=None):
-        '''Return log-P for all items in data list'''
+        '''Return logP,li[],post[] for all obs in data list'''
         if models is None:
             models=self.models
         l=[]
+        parentPrior=1.
         for model in models: # COMPUTE PRIOR-WEIGHTED PROB.
+            parentPrior-=model.prior
             prior=self.delta*model.prior
             l.append([p*prior for p in model.pdf(self.data)])
-        for i in range(1,len(models)):
-            l[0]=map(lambda x,y:x+y,l[0],l[i]) # SUM THE PROB VECTORS
+        if parentPrior>0.: # GET CONTRIBUTION FROM PARENT
+            lsum=[parentPrior*self.delta*p for p in self.parent.pdf(self.data)]
+        else: # NO PROBABILITY FROM PARENT
+            lsum=[0.]*len(self.data)
+        for i in range(len(models)): # SUM LIKELIHOOD OF ALL MODELS FOR EACH OBS
+            lsum=map(lambda x,y:x+y,lsum,l[i]) # SUM THE PROB VECTORS
+        l=[map(lambda x,y:x/y,li,lsum) for li in l] # GET POSTERIOR OBS ASSIGNMENTS
         logP=0.
-        for p in l[0]: # NOW TAKE PRODUCT IN LOG-SPACE
+        for p in lsum: # NOW TAKE PRODUCT IN LOG-SPACE
             logP+=log(p)
-        return logP
+        # TREAT models AS EMITTED FROM parent
+        logPmodel=self.parent.computeP([model.args[0] for model in models])[0]
+        return logP+logPmodel,lsum,l
+
+    def weightedModels(self,data,w,modelKlass=stats.norm):
+        moments,n=weightedMoments(data,w) # COMPUTE WEIGHTED MOMENTS
+        models=[modelKlass(m[0],m[1]) for m in moments] # CREATE MODELS
+        for i in range(len(moments)): # SAVE PRIOR FOR EACH MODEL
+            models[i].prior=float(n[i])/len(data)
+        return models
+
+    def convergeModel(self,w,minDiff=log(1.1),nMax=5):
+        'return converged models,obs-likelihoods,obs-posteriors'
+        pLast=-1e20
+        logP=-1e19
+        i=0
+        while logP-pLast>minDiff:
+            pLast=logP
+            models=self.weightedModels(self.data,w) # GENERATE ADJUSTED MODELS...
+            logP,li,w=self.computeP(self.data,models) # COMPUTE PROBABILITIES
+            print 'logP',logP
+            i+=1
+            if i>=nMax: # ONLY PERFORM nMax ITERATIONS
+                break
+        return models,li,w,logP
+
+    def addREModel(self,obsDensity,minD=0.02,monitor=None,**kwargs):
+        d,re=obsDensity.relativeEntropy(self) # COMPUTE REL ENT VS. CURRENT MODEL
+        if monitor is not None:
+            monitor(re,obsDensity,self)
+        #reDensity=[]
+        reSum=0.
+        reMax=0.
+        xmax=None
+        start=None
+        for i in range(len(obsDensity)): # FIND BIGGEST PEAK MASS
+            y=re[i]/(obsDensity[i][1]-obsDensity[i][0])
+            if y>minD: # ABOVE THRESHOLD
+                if start is None: # START OF A NEW PEAK
+                    start=obsDensity[i][0]
+                reSum+=re[i]
+                if reSum>reMax: # RECORD BIGGEST MASS PEAK
+                    reMax=reSum
+                    xmax=obsDensity[i][1]
+                    xmin=start
+            else: # BELOW THRESHOLD
+                start=None
+                reSum=0.
+##         reDensity=[(re[i]/(obsDensity[i][1]-obsDensity[i][0]),i) for i in range(len(obsDensity))]
+##         peak=max(reDensity) # FIND THE PEAK
+##         if peak[0]<minD:
+        if xmax is None:
+            return None
+##         i=peak[1] # FIND [MIN,MAX] INTERVAL ABOVE minD THRESHOLD
+##         while i>0 and reDensity[i-1][0]>minD:
+##             i-=1
+##         xmin=obsDensity[i][0]
+##         i=peak[1]
+##         while i+1<len(obsDensity) and reDensity[i+1][0]>minD:
+##             i+=1
+##         xmax=obsDensity[i][1]
+        w=[[x for x in l] for l in self.w] # DEEP COPY OF OBS WEIGHT MATRIX
+        wNew=[0.]*len(self.data) # ADD NEW MODEL INITIALLY WITH NO OBS
+        i=0
+        while i<len(self.data) and self.data[i]<xmin: # SKIP PAST OBS TO THE LEFT OF PEAK
+            i+=1
+        while i<len(self.data) and self.data[i]<xmax: # MARK OBS IN THIS PEAK
+            for l in w: # REMOVE THIS OBS FROM OLD MODELS
+                l[i]=0.
+            wNew[i]=1. # ASSIGN IT TO NEW MODEL
+            i+=1
+        w.append(wNew) # ADD NEW MODEL TO THE TEMPORARY WEIGHT MATRIX
+        return self.convergeModel(w,**kwargs) # GENERATE A CONVERGED MODEL FROM THIS START
+
+    def buildModels(self,obsDensity=None,wSmooth=0.5,minAccept=log(100.),**kwargs):
+        if obsDensity is None:
+            obsDensity=ObsDensity(self.data)
+            obsDensity.smoothDensity(wSmooth)
+        pLast=-1e20
+        logP=-1e19
+        i=0
+        while logP-pLast>minAccept:
+            try: # SAVE NEWLY ACCEPTED MODEL
+                self.models=models
+                self.w=w
+                print 'added model',i
+                i+=1
+            except NameError: # NO MODEL TO SAVE YET
+                pass
+            pLast=logP
+            result=self.addREModel(obsDensity,**kwargs)
+            if result is None:
+                break
+            else:
+                models,li,w,logP=result
+        return pLast
 
     def extend(self,k):
         '''try to improve likelihood:
@@ -208,13 +340,13 @@ class ModelLayer(list):
             l[i].append(self.data[j])
             j+=1
         newmodel=[]
-        means=[]
+        #means=[]
         for j in range(k):
             model=Model(self,l[j],float(len(l[j]))/len(self.data),self.delta)
             newmodel.append(model)
-            means.append(model.args[0])
-        logP=self.computeP(self.data,newmodel) # COMPUTE NEW LOG-P
-        logP+=self.parent.computeP(means) # COMPUTE LOG-P FOR newmodels
+            #means.append(model.args[0])
+        logP=self.computeP(self.data,newmodel)[0] # COMPUTE NEW LOG-P
+        #logP+=self.parent.computeP(means) # COMPUTE LOG-P FOR newmodels
         print 'logP:',logP
         if logP>self.lastP+self.logConfidence: # ACCEPT THE NEW MODEL
             self.models=newmodel
