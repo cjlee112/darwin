@@ -24,6 +24,8 @@ class DominantLocus(Locus): pass
 class RecessiveLocus(Locus): pass
 
 class Chromosome(list):
+    '''list of (pos,locus) tuples, where x is position expressed as a
+    genetic distance in Morgans'''
     def __mul__(self,other):
         'return recombinants of self and other'
         swap = 0
