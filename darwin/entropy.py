@@ -49,7 +49,7 @@ def calc_density(vectors,dx):
     return numpy.core.divide(calc_box(vectors,dx),len(vectors)*pow(dx,len(vectors[0])))
 
 def box_entropy(vectors,m):
-    'calculate entropy using specified number of points'
+    'calculate differential entropy using specified number of points m'
     a = numpy.core.array(vectors)
     n = len(vectors)
     ndim = len(vectors[0])
@@ -66,9 +66,12 @@ def box_entropy(vectors,m):
         e1[i] = e[m2-1]
         e2[i] = e[m2]
         nm[i] = m2 - 1 # don't count center point -- unbiased calculation
-    return -numpy.average(numpy.log(nm/(n - 1)) # don't count center point
-                          - numpy.log(0.5*((e1/e2)**ndim)+0.5)
-                          - ndim*numpy.log(2.*e2))
+    hvec = ndim*numpy.log(2.*e2) + numpy.log(0.5*((e1/e2)**ndim)+0.5) \
+           - numpy.log(nm/(n - 1))
+    h = numpy.average(hvec)
+    hvec -= h
+    variance = numpy.average(hvec * hvec)
+    return h, variance / n
 
 ## def box_entropy(vectors,m):
 ##     d = box_density(vectors,m)
