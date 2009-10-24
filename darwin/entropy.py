@@ -60,16 +60,26 @@ class SampleEstimator(object):
         self.variance = numpy.average(diffs * diffs) / len(sample)
 
     def __neg__(self):
-        return EmpiricalEstimate(mean= -self.mean, variance=self.variance)
+        return self.__class__(mean= -self.mean, variance=self.variance)
 
     def __sub__(self, other):
-        return EmpiricalEstimate(mean= self.mean - other.mean,
-                                 variance=self.variance + other.variance)
+        return self.__class__(mean= self.mean - other.mean,
+                              variance=self.variance + other.variance)
 
     def __add__(self, other):
-        return EmpiricalEstimate(mean= self.mean + other.mean,
-                                 variance=self.variance + other.variance)
+        return self.__class__(mean= self.mean + other.mean,
+                              variance=self.variance + other.variance)
 
+    def __isub__(self, other):
+        self.mean -= other.mean
+        self.variance += other.variance
+        return self
+
+    def __iadd__(self, other):
+        self.mean += other.mean
+        self.variance += other.variance
+        return self
+    
     def get_bound(self, p=0.05):
         '''calculate percentile bound, e.g. p=0.05 gives lower bound
         with 95% confidence'''
