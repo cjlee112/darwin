@@ -65,8 +65,9 @@ def box_entropy(vectors,m):
             if e[m2]>0.: break
         e1[i] = e[m2-1]
         e2[i] = e[m2]
-        nm[i] = m2
-    return -numpy.average(numpy.log(nm/n) - numpy.log(0.5*((e1/e2)**ndim)+0.5)
+        nm[i] = m2 - 1 # don't count center point -- unbiased calculation
+    return -numpy.average(numpy.log(nm/(n - 1)) # don't count center point
+                          - numpy.log(0.5*((e1/e2)**ndim)+0.5)
                           - ndim*numpy.log(2.*e2))
 
 ## def box_entropy(vectors,m):
