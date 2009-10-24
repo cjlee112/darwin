@@ -48,14 +48,52 @@ def calc_box(vectors,dx):
 def calc_density(vectors,dx):
     return numpy.core.divide(calc_box(vectors,dx),len(vectors)*pow(dx,len(vectors[0])))
 
-def box_entropy(vectors, m, pValue=0.4):
+
+class SampleEstimator(object):
+    def __init__(self, sample=None, mean=None, variance=None):
+        if variance is not None: # store values supplied by user
+            self.mean = mean
+            self.variance = variance
+            return
+        self.mean = numpy.average(sample)
+        diffs = sample - self.mean
+        self.variance = numpy.average(diffs * diffs) / len(sample)
+
+    def __neg__(self):
+        return EmpiricalEstimate(mean= -self.mean, variance=self.variance)
+
+    def __sub__(self, other):
+        return EmpiricalEstimate(mean= self.mean - other.mean,
+                                 variance=self.variance + other.variance)
+
+    def __add__(self, other):
+        return EmpiricalEstimate(mean= self.mean + other.mean,
+                                 variance=self.variance + other.variance)
+
+    def get_bound(self, p=0.05):
+        '''calculate percentile bound, e.g. p=0.05 gives lower bound
+        with 95% confidence'''
+        if p < 0.5:
+            return self.mean - sqrt(0.5 * self.variance / p)
+        else:
+            return self.mean + sqrt(0.5 * self.variance / (1. - p))
+
+class LogPVector(object):
+    def __init__(self, sample):
+        self.sample = sample
+    def __neg__(self):
+        return LogPVector(-self.sample)
+    def __sub__(self, other):
+        return SampleEstimator(self.sample -  other.sample)
+
+
+def box_entropy(vectors, m):
     '''calculate differential entropy using specified number of points m
     pValue=0.4 implies 20% below lower bound, 20% above upper bound.
     If you compare lower bound of -Le vs upper bound of He with these
     p-values, implies ~4% probability that true -Le-He < estimated -Le-He
     vectors: sampled data points;
-    m: number of nearest points to include in each density-sampling box;
-    pValue: probability that E(|He-H|) > epsilon)'''
+    m: number of nearest points to include in each density-sampling box'''
     a = numpy.core.array(vectors)
     n = len(vectors)
     ndim = len(vectors[0])
@@ -74,10 +112,7 @@ def box_entropy(vectors, m, pValue=0.4):
         nm[i] = m2 - 1 # don't count center point -- unbiased calculation
     hvec = ndim*numpy.log(2.*e2) + numpy.log(0.5*((e1/e2)**ndim)+0.5) \
            - numpy.log(nm/(n - 1))
-    h = numpy.average(hvec)
-    hvec -= h
-    variance = numpy.average(hvec * hvec)
-    return h, sqrt(variance / (n * pValue))
+    return LogPVector(hvec)
 
 ## def box_entropy(vectors,m):
 ##     d = box_density(vectors,m)
@@ -95,13 +130,9 @@ sample box is of course centered on a data point...
 '''
 
 
-def get_Le_bounds(vectors, model, pValue=0.4):
+def sample_Le(vectors, model):
     '''calculate average log-likelihood and bound by LoLN.
     vectors: sampled data points;
-    model: likelihood model with pdf() method;
-    pValue: probability that E(|Le-L|) > epsilon)'''
+    model: likelihood model with pdf() method'''
     logP = numpy.log(model.pdf(vectors))
-    lMean = numpy.average(logP)
-    logP -= lMean
-    variance = numpy.average(logP * logP)
-    return lMean, sqrt(variance / (len(vectors) * pValue))
+    return LogPVector(logP)
