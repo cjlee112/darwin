@@ -66,8 +66,8 @@ def box_entropy(vectors,m):
         e1[i] = e[m2-1]
         e2[i] = e[m2]
         nm[i] = m2
-    return -numpy.sum(numpy.log(nm/n) - numpy.log(0.5*((e1/e2)**ndim)+0.5)
-                      - ndim*numpy.log(2.*e2))/n
+    return -numpy.average(numpy.log(nm/n) - numpy.log(0.5*((e1/e2)**ndim)+0.5)
+                          - ndim*numpy.log(2.*e2))
 
 ## def box_entropy(vectors,m):
 ##     d = box_density(vectors,m)
@@ -75,8 +75,9 @@ def box_entropy(vectors,m):
 
 '''
 argh, entropy calculation in a high-dim space via MC sampling is not easy.
-The problem is that with high-dimensionality only a hypercube that is close
-to equal in side-length to the entire bounding box contains more than an
+The problem is that with high-dimensionality only a hypersphere with a radius
+substantially larger than the
+side-length of the entire bounding box contains more than an
 infinitesimal fraction of the total volume, and thus has any prayer of
 containing a sample point.  But then you run into problems with the
 sample box going outside the bounding box, and also the bias that every
