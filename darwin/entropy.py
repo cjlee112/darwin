@@ -1,5 +1,5 @@
 import numpy
-from math import log,pi
+from math import log, pi, sqrt
 
 def calc_dist(vectors):
     'calculate euclidean distance^2 for every vector pair'
@@ -48,8 +48,14 @@ def calc_box(vectors,dx):
 def calc_density(vectors,dx):
     return numpy.core.divide(calc_box(vectors,dx),len(vectors)*pow(dx,len(vectors[0])))
 
-def box_entropy(vectors,m):
-    'calculate differential entropy using specified number of points m'
+def box_entropy(vectors, m, pValue=0.4):
+    '''calculate differential entropy using specified number of points m
+    pValue=0.4 implies 20% below lower bound, 20% above upper bound.
+    If you compare lower bound of -Le vs upper bound of He with these
+    p-values, implies ~4% probability that true -Le-He < estimated -Le-He
+    vectors: sampled data points;
+    m: number of nearest points to include in each density-sampling box;
+    pValue: probability that E(|He-H|) > epsilon)'''
     a = numpy.core.array(vectors)
     n = len(vectors)
     ndim = len(vectors[0])
@@ -71,7 +77,7 @@ def box_entropy(vectors,m):
     h = numpy.average(hvec)
     hvec -= h
     variance = numpy.average(hvec * hvec)
-    return h, variance / n
+    return h, sqrt(variance / (n * pValue))
 
 ## def box_entropy(vectors,m):
 ##     d = box_density(vectors,m)
@@ -87,3 +93,15 @@ containing a sample point.  But then you run into problems with the
 sample box going outside the bounding box, and also the bias that every
 sample box is of course centered on a data point...
 '''
+
+
+def get_Le_bounds(vectors, model, pValue=0.4):
+    '''calculate average log-likelihood and bound by LoLN.
+    vectors: sampled data points;
+    model: likelihood model with pdf() method;
+    pValue: probability that E(|Le-L|) > epsilon)'''
+    logP = numpy.log(model.pdf(vectors))
+    lMean = numpy.average(logP)
+    logP -= lMean
+    variance = numpy.average(logP * logP)
+    return lMean, sqrt(variance / (len(vectors) * pValue))
