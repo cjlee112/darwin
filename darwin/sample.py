@@ -11,7 +11,7 @@ Wh = RecessiveAllele("Wh", stats.norm(0,1))
 Pu = DominantAllele("Pu", stats.norm(10,1))
 
 def multiset(list_):
-    """return a multiset from the input iterable list_"""
+    """Returns a multiset (a dictionary) from the input iterable list_."""
     mset = dict()
     for elem in list_:
         try:
@@ -54,7 +54,6 @@ def experiment(parent_1, parent_2, n=1):
 
 def generate_population(n=100, gen=20, plants=None):
     """Generate and breed several generations of plants, attempting to select pure white and pure purple plants to mimic Mendel's initial conditions."""
-    #initialize population
     if plants is None:
         plants = list()
         for i in range(0,n):
@@ -68,17 +67,6 @@ def generate_population(n=100, gen=20, plants=None):
         plants = new_pop
     return plants
 
-def determine_color(obs):
-    """Given observations from the same plant, declare the plant white or purple based on the mean of the observations."""
-    if isinstance(obs, PeaPlant):
-        obs = obs.rvs(1)
-    mean_obs = float(sum(obs)) / float(len(obs))
-    dist_to_zero = abs(mean_obs - 0)
-    dist_to_ten = abs(mean_obs - 10)
-    if dist_to_zero > dist_to_ten:
-        return "purple"
-    else:
-        return "white"
 
 def punnet_cross_experiments():
     # phenotypes for initial plant constructions
@@ -104,29 +92,102 @@ def punnet_cross_experiments():
                 print "  %d %s offspring" % (offspring_counts[key], key)
 
 
+class RoboMendel(object):
+    
+    def __init__(self):
+        self.population = list()
+        self.crossing_model = dict({ tuple(["purple", "purple"]): "purple"})
+    
+    def initialize_population(self):
+        """Initialize a population of 10 purple plants and 10 hybrid plants, all phenotypically purple."""
+        print "RoboMendel> Initializing population."
+        plants = list()
+        for i in range(0, 10):
+            plants.append(PeaPlant(loci=[Pu, Pu]))
+        for i in range(0, 10):
+            plants.append(PeaPlant(loci=[Pu, Wh]))
+        self.population = plants
+
+    def determine_color(self, obs):
+        """Given observations from the same plant, declare the plant white or purple based on the mean of the observations."""
+        if isinstance(obs, PeaPlant):
+            obs = obs.rvs(1)
+        mean_obs = float(sum(obs)) / float(len(obs))
+        dist_to_zero = abs(mean_obs - 0)
+        dist_to_ten = abs(mean_obs - 10)
+        if dist_to_zero > dist_to_ten:
+            return "purple"
+        else:
+            return "white"
+
+    def population_report(self):
+        purple_pop = [x for x in self.population if self.determine_color(x) == "purple"]
+        white_pop = [x for x in self.population if self.determine_color(x) == "white"]
+        print "RoboMendel> Report> There are %d white plants and %d purple plants" % (len(white_pop), len(purple_pop))
+        return dict({"white": len(white_pop), "purple": len(purple_pop)})
+
+    def predict_new_population(self, n=20):
+        population_colors = set(self.determine_color(x) for x in self.population)
+        predicted_colors = set()
+        for color_1 in population_colors:
+            for color_2 in population_colors:
+                predicted_colors.add(self.crossing_model[(color_1, color_2)] )
+        predicted_colors = list(predicted_colors)
+        print "RoboMendel> Predict> The next population will consist of individuals of the following colors: %s." % (" ".join(predicted_colors))
+        return predicted_colors
+
+    def iterate_population(self, n=20):
+        print "RoboMendel> Breeding new population"
+        new_pop = list()
+        for j in range(0, n):
+            plant_1 = random.choice(self.population)
+            plant_2 = random.choice(self.population)
+            new_pop.append(plant_1 * plant_2)
+        self.population = new_pop
+
+
 def main(argv):
-    population = generate_population()
+    # Create RoboMendel!
+    print "Activating RoboMendel" 
+    robomendel = RoboMendel()
+    # Obtain initial population of all phenotypically purple plants.
+    robomendel.initialize_population()
+    # Examine the population, RoboMendel!
+    robomendel.population_report()
+
+    prediction_correct = True
     
-    # Separate the purple plants and the white plants
-    purple_pop = [x for x in population if determine_color(x) == "purple"]
-    white_pop = [x for x in population if determine_color(x) == "white"]
-
-    print "Initial population:"
-    print "  There are %d white plants and %d purple plants" % (len(white_pop), len(purple_pop))
-    
-    
-    print "Isolating and breeding purple plants"
-    # Initialize new population with purple plants
-    population = generate_population(plants=purple_pop, gen=1)
-        
-    # Separate the purple plants and the white plants
-    purple_pop = [x for x in population if determine_color(x) == "purple"]
-    white_pop = [x for x in population if determine_color(x) == "white"]
-
-    print "New population:"
-    print "  There are %d white plants and %d purple plants" % (len(white_pop), len(purple_pop))
+    # What would happen if we breed a new population?
+    predicted_colors = robomendel.predict_new_population()
+    # Breed a new population.
+    robomendel.iterate_population()
+    # Tell us about the new population.
+    report = robomendel.population_report()
+    # Was your prediction correct?
+    colors = set([x for x in report.keys() if report[x] > 0])
+    for color in colors:
+        if color not in predicted_colors:
+            prediction_correct = False
+    if prediction_correct:
+        print "RoboMendel> Report> No anomolous colors found. Predicted colors were correct."
+    else:
+        print "RoboMendel> Report> Predicted colors incorrect."
 
 
+    ##while True:
+
+        ##print "Isolating and breeding purple plants"
+        ### Initialize new population with purple plants
+        ##population = generate_population(20, plants=purple_pop, gen=1)
+
+        ### Separate the purple plants and the white plants
+        ##purple_pop = [x for x in population if determine_color(x) == "purple"]
+        ##white_pop = [x for x in population if determine_color(x) == "white"]
+
+        ##print "New population:"
+        ##print "  There are %d white plants and %d purple plants" % (len(white_pop), len(purple_pop))
+
+        ##raw_input()
 
 
 if __name__ == '__main__':

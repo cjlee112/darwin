@@ -3,7 +3,6 @@
 from scipy import stats
 import random
 
-
 class Allele(object):
     def __init__(self, name, phenotype):
         self.name = name
