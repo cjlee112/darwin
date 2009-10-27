@@ -5,28 +5,22 @@ import random
 
 
 class Locus(object):
-    def __init__(self,name,phenotype):
-        self.name=name
-        self.phenotype=phenotype
-    def __add__(self,other):
-        'get phenotype of combined self + other locus'
-        if isinstance(self,DominantLocus):
-            return self
-        elif isinstance(other,DominantLocus):
-            return other
-        else:
-            return self
-    def __call__(self,n):
+    def __init__(self, name, phenotype):
+        self.name = name
+        self.phenotype = phenotype
+    def rvs(self, n):
         'get phenotype sample of size n'
         return (self.phenotype.rvs(n))
     def __repr__(self):
         return self.name
 
 class DominantLocus(Locus): pass
-    #def __call__(self, n):
-        #return super(Locus, self).__call__(n)
+    def __add__(self, other):
+        return self
 
 class RecessiveLocus(Locus): pass
+    def __add__(self, other):
+        return other
 
 class Chromosome(list):
     '''list of (pos,locus) tuples, where x is position expressed as a

@@ -6,11 +6,14 @@ import sys
 from scipy import stats
 from mendel import *
 
+Wh = RecessiveLocus("Wh", stats.norm(10,1))
+Pu = DominantLocus("Pu", stats.norm(1,1))
+
 
 class PeaPlant(object):
     def __init__(self, loci=None):
         if loci is None:
-            genes = {"white": RecessiveLocus("white", stats.norm(10,1)), "purple": DominantLocus("purple", stats.norm(1,1)) }
+            genes = {"white": Wh, "purple": Pu }
             self.loci = list()
             for i in range(0,2):
                 key = random.choice(genes.keys())
