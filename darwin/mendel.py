@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 
 from scipy import stats
 import random
@@ -17,10 +18,14 @@ class Locus(object):
             return self
     def __call__(self,n):
         'get phenotype sample of size n'
-        return self.phenotype.rvs(n)
+        return (self.phenotype.rvs(n))
     def __repr__(self):
         return self.name
+
 class DominantLocus(Locus): pass
+    #def __call__(self, n):
+        #return super(Locus, self).__call__(n)
+
 class RecessiveLocus(Locus): pass
 
 class Chromosome(list):
