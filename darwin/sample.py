@@ -70,12 +70,12 @@ def determine_color(obs):
     if isinstance(obs, PeaPlant):
         obs = obs.obs(1)
     mean_obs = float(sum(obs)) / float(len(obs))
-    dist_to_one = abs(mean_obs - 1)
+    dist_to_one = abs(mean_obs - 0)
     dist_to_ten = abs(mean_obs - 10)
     if dist_to_one > dist_to_ten:
-        return "white"
-    else:
         return "purple"
+    else:
+        return "white"
 
 def punnet_cross_experiments():
     # phenotypes for initial plant constructions
@@ -122,7 +122,6 @@ def main(argv):
 
     print "New population:"
     print "  There are %d white plants and %d purple plants" % (len(white_pop), len(purple_pop))
-
 
 
 
