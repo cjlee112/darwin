@@ -14,11 +14,11 @@ class Locus(object):
     def __repr__(self):
         return self.name
 
-class DominantLocus(Locus): pass
+class DominantLocus(Locus):
     def __add__(self, other):
         return self
 
-class RecessiveLocus(Locus): pass
+class RecessiveLocus(Locus):
     def __add__(self, other):
         return other
 
