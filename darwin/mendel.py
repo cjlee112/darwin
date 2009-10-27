@@ -4,33 +4,28 @@ from scipy import stats
 import random
 
 
-class Locus(object):
-    def __init__(self,name,phenotype):
-        self.name=name
-        self.phenotype=phenotype
-    def __add__(self,other):
-        'get phenotype of combined self + other locus'
-        if isinstance(self,DominantLocus):
-            return self
-        elif isinstance(other,DominantLocus):
-            return other
-        else:
-            return self
-    def __call__(self,n):
+class Allele(object):
+    def __init__(self, name, phenotype):
+        self.name = name
+        self.phenotype = phenotype
+    def rvs(self, n):
         'get phenotype sample of size n'
         return (self.phenotype.rvs(n))
     def __repr__(self):
         return self.name
 
-class DominantLocus(Locus): pass
-    #def __call__(self, n):
-        #return super(Locus, self).__call__(n)
+class DominantAllele(Allele):
+    def __add__(self, other):
+        return self
 
-class RecessiveLocus(Locus): pass
+class RecessiveAllele(Allele):
+    def __add__(self, other):
+        return other
 
 class Chromosome(list):
-    '''list of (pos,locus) tuples, where x is position expressed as a
-    genetic distance in Morgans'''
+    '''list of (pos,allele) tuples, where x is position expressed as a
+    genetic distance in Morgans, e.g.
+    chr1 = Chromosome([(0.01,Wh),(0.3,Wr)])'''
     def __mul__(self,other):
         'return recombinants of self and other'
         swap = 0
@@ -44,6 +39,11 @@ class Chromosome(list):
 
 
 class Genome(dict):
+    '''dictionary of chromosomes whose keys are chromosome IDs,
+    and whose associated values are tuples each containing
+    a pair of Chromosome instances.
+    e.g.
+    g = Genome({1:(chr1a,chr1b), 2:(chr2a,chr2b)})'''
     def __mul__(self,other):
         'return single progeny of self and other'
         child = Genome()
