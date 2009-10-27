@@ -7,8 +7,8 @@ from scipy import stats
 from mendel import *
 from entropy import *
 
-Wh = RecessiveLocus("Wh", stats.norm(0,1))
-Pu = DominantLocus("Pu", stats.norm(10,1))
+Wh = RecessiveAllele("Wh", stats.norm(0,1))
+Pu = DominantAllele("Pu", stats.norm(10,1))
 
 def multiset(list_):
     """return a multiset from the input iterable list_"""
@@ -39,9 +39,9 @@ class PeaPlant(object):
         """Reproduce!"""
         return PeaPlant(loci=[random.choice(self.loci), random.choice(mate.loci)] )
         
-    def obs(self, n=1):
+    def rvs(self, n=1):
         """Observe n times."""
-        locus = self.loci[0]+self.loci[1]
+        locus = self.loci[0] + self.loci[1]
         return locus.rvs(n)
 
 def experiment(parent_1, parent_2, n=1):
@@ -49,7 +49,7 @@ def experiment(parent_1, parent_2, n=1):
     observations = list()
     for i in range(0, n):
         offspring = parent_1 * parent_2
-        observations.append(offspring.obs(1)[0])
+        observations.append(offspring.rvs(1)[0])
     return observations
 
 def generate_population(n=100, gen=20, plants=None):
@@ -71,7 +71,7 @@ def generate_population(n=100, gen=20, plants=None):
 def determine_color(obs):
     """Given observations from the same plant, declare the plant white or purple based on the mean of the observations."""
     if isinstance(obs, PeaPlant):
-        obs = obs.obs(1)
+        obs = obs.rvs(1)
     mean_obs = float(sum(obs)) / float(len(obs))
     dist_to_zero = abs(mean_obs - 0)
     dist_to_ten = abs(mean_obs - 10)
@@ -82,7 +82,7 @@ def determine_color(obs):
 
 def punnet_cross_experiments():
     # phenotypes for initial plant constructions
-    loci_choices = {"white": RecessiveLocus("white", stats.norm(0,1)), "purple": DominantLocus("purple", stats.norm(10,1)) }
+    loci_choices = {"white": Wh, "purple": Pu }
         
     pp = PeaPlant(name="purple", loci=[loci_choices['purple'], loci_choices['purple']])
     ww = PeaPlant(name="white",  loci=[loci_choices['white'], loci_choices['white']])
