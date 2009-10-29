@@ -99,3 +99,50 @@ his confidence interval.  So he obtains another 100 observations::
 
 This tells RoboMendel that he's discovered a new set of 
 observations that convincingly do not fit ``modelPu``.
+
+Testing a Simple Fix
+--------------------
+
+RoboMendel always tries the simplest fix first.  In particular,
+he has constructed his model by simply training on the past data,
+and testing how well the model predicts new observations.  This
+amounts to assuming that all the observations were emitted I.I.D.
+from the same distribution.  In his garden his training data show
+that approximately 10% of the flowers are white, vs. 90% are purple.
+He trains a new model approximately as follows::
+
+   >>> mean = numpy.average(obsWh)
+   >>> var = numpy.average(obsWh * obsWh) - mean * mean
+   >>> modelWh = stats.norm(mean, math.sqrt(var))
+   >>> import mixture
+   >>> modelMix = mixture.Mixture(((0.9, modelPu), (0.1, modelWh)))
+
+He now calculates the potential information from his "wierd" plant::
+
+   >>> Le = entropy.sample_Le(obsWh, modelMix)
+   >>> Ip = -Le - He
+   >>> Ip.mean
+   2.3820939964182544
+   >>> Ip.get_bound()
+   2.2479290384886377
+
+This strong potential information reflects a basic mismatch
+versus the model: the flower colors do not appear to be drawn I.I.D.
+Instead of each flower having a 10% chance of being white, RoboMendel
+sees that on certain plants, *all flowers* are white
+(the precise value of *Ip*
+indicates that white flowers are occuring about 10 times more frequently
+than the model says they should), whereas on the
+remaining plants *all flowers* are purple.  Indeed the purple plants
+also show strong *Ip* vs. this model::
+
+   >>> He = entropy.box_entropy(obsNew, 7)
+   >>> Le = entropy.sample_Le(obsNew, modelMix)
+   >>> Ip = -Le - He
+   >>> Ip.mean
+   0.10201691139077627
+   >>> Ip.get_bound()
+   0.073689305323023341
+
+Evidently, a more sophisticated model is required.
+
