@@ -183,3 +183,18 @@ The latter is clearly a much greater win (simply by total information
 magnitude).  RoboMendel can add more decimal points to his
 accuracy later -- first he has a major failure of his model to fix!
 
+Defining a Phenotype
+--------------------
+
+Since the observations cluster by individual plant, RoboMendel's
+next creates a hidden variable :math:`\Theta_i` associated with each plant
+*i*, with two possible values {**WH**, **PU**}, which emit
+white vs. purple flowers respectively.  Again using the simplest
+possible model, RoboMendel assumes that :math:`\Theta_i` is emitted
+I.I.D. for each plant with a binomial probability 
+:math:`p(\Theta_p=WH)`.  Since he has observed only one white plant
+out of the 100 pea plants he's seen over the last five years, he
+estimates this binomial probability to be 1%.
+
+
+
