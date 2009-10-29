@@ -23,7 +23,7 @@ He constructs a model from his observations::
 
 He collects a new set of observations this year.
 Next he calculates the empirical entropy of the observations,
-and the empirical likelihood::
+and the empirical log-likelihood::
 
    >>> obsNew = plantPu.get_phenotypes()[0].rvs(20 * 100)
    >>> He = entropy.box_entropy(obsNew, 7)
