@@ -117,10 +117,29 @@ He trains a new model approximately as follows::
    >>> import mixture
    >>> modelMix = mixture.Mixture(((0.9, modelPu), (0.1, modelWh)))
 
-He now calculates the potential information from his "wierd" plant::
+To assess whether this model is an improvement over his old
+model, he calculates the empirical information gain::
 
-   >>> Le = entropy.sample_Le(obsWh, modelMix)
-   >>> Ip = -Le - He
+   >>> LeMix = entropy.sample_Le(obsWh, modelMix)
+   >>> Ie = LeMix - Le
+   >>> Ie.mean
+   47.821464796147559
+   >>> Ie.get_bound()
+   44.806512600644481
+
+This provides a convincing demonstration that RoboMendel should abandon
+the old ``modelPu`` (which asserts that no white flowers exist),
+in favor of the new mixture model.  One way of describing this is
+that the mixture
+model has converted approximately 45 nats of *potential information*
+into *empirical information*, i.e. a measurable improvement in 
+prediction power.
+
+Can RoboMendel rest easy after his success?
+He now calculates the potential information for the mixture model
+from his "wierd" plant::
+
+   >>> Ip = -LeMix - He
    >>> Ip.mean
    2.3820939964182544
    >>> Ip.get_bound()
