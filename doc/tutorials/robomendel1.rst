@@ -104,10 +104,11 @@ Testing a Simple Fix
 --------------------
 
 RoboMendel always tries the simplest fix first.  In particular,
-he has constructed his model by simply training on the past data,
-and testing how well the model predicts new observations.  This
+he constructed his old model by simply training on the past data,
+and tested it by measuring how well it predicts new observations.  This
 amounts to assuming that all the observations were emitted I.I.D.
-from the same distribution.  In his garden his training data show
+from the same distribution.  He can do the same thing with the
+new observations.  In his garden, his training data show
 that approximately 10% of the flowers are white, vs. 90% are purple.
 He trains a new model approximately as follows::
 
@@ -164,4 +165,21 @@ also show strong *Ip* vs. this model::
    0.073689305323023341
 
 Evidently, a more sophisticated model is required.
+
+How to decide what to do next?
+------------------------------
+
+Note that RoboMendel has two distinct directions for further work
+to choose from:
+
+* he could simply collect more observations from his "white plant"
+  to raise the *Ip* lower bound from 2.25 up to as high as 2.38
+  (a gain of up to 0.13 nats).
+
+* he could try to convert the 2.25 nats of potential information
+  to empirical information.
+
+The latter is clearly a much greater win (simply by total information
+magnitude).  RoboMendel can add more decimal points to his
+accuracy later -- first he has a major failure of his model to fix!
 
