@@ -105,9 +105,14 @@ def box_entropy(vectors, m):
     p-values, implies ~4% probability that true -Le-He < estimated -Le-He
     vectors: sampled data points;
     m: number of nearest points to include in each density-sampling box'''
-    a = numpy.core.array(vectors)
-    n = len(vectors)
-    ndim = len(vectors[0])
+    if not hasattr(vectors, 'ndim'):
+        a = numpy.core.array(vectors)
+    else:
+        a = vectors
+    n = len(a)
+    if a.ndim == 1:
+        a = a.reshape((n, 1))
+    ndim = a.shape[1]
     rows = numpy.arange(n)
     e1 = numpy.core.zeros((n))
     e2 = numpy.core.zeros((n))
