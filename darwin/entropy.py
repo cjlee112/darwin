@@ -151,3 +151,25 @@ def sample_Le(vectors, model):
     model: likelihood model with pdf() method'''
     logP = numpy.log(model.pdf(vectors))
     return LogPVector(logP)
+
+
+def d2_entropy(v, m):
+    '''experimental method for estimating entropy using mean-squared
+    distance of a sample of m-1 closest points around a given point'''
+    v.sort()
+    n = len(v)
+    r = m
+    l = 0
+    dvec = numpy.core.zeros((n))
+    for c in range(n):
+        while r < n and abs(v[l] - v[c]) > abs(v[r] - v[c]):
+            r += 1
+            l += 1
+        d2 = 0.
+        for i in range(l, r):
+            d = v[i] - v[c]
+            d2 += d * d
+        dvec[c] = d2
+    dvec = numpy.core.ones((n)) / numpy.sqrt(dvec * (12./(m - 1.)))
+    return LogPVector( - numpy.log(dvec * ((m - 1.) / (n - 1.))))
+
