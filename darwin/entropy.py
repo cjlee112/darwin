@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import numpy
 from math import log, pi, sqrt
 
@@ -99,9 +100,6 @@ class LogPVector(object):
 
 def box_entropy(vectors, m):
     '''calculate differential entropy using specified number of points m
-    pValue=0.4 implies 20% below lower bound, 20% above upper bound.
-    If you compare lower bound of -Le vs upper bound of He with these
-    p-values, implies ~4% probability that true -Le-He < estimated -Le-He
     vectors: sampled data points;
     m: number of nearest points to include in each density-sampling box'''
     if not hasattr(vectors, 'ndim'):
