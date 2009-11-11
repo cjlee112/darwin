@@ -172,16 +172,46 @@ def d2_entropy(v, m):
     return LogPVector( - numpy.log(dvec * ((m - 1.) / (n - 1.))))
 
 
-def grow_interval(target, l, r, yi):
+def grow_interval(target, l, r, cy, k=0):
     'expand interval on either left or right depending on which is closer'
     if l > 0 and \
-        (r == n or abs(target[l-1][0] - yi) < abs(target[r][0] - yi)):
-        return l - 1, r, abs(target[l-1][0] - yi)
+        (r == n or abs(target[l-1][k] - cy) < abs(target[r][k] - cy)):
+        return l - 1, r, abs(target[l-1][k] - cy), l - 1
     else:
-        return l, r + 1, abs(target[r][0] - yi)
+        return l, r + 1, abs(target[r][k] - cy), r 
 
 
-def find_rect(target, m, i, ratio):
+
+def find_radius(target, l, r, cy, m, k=0, minradius=1.):
+    '''find box enclosing at least m points with non-zero volume.
+    Then return radius for mid-point between m-th furthest point and
+    m-t th furthest point.  If all points have identical coordinates,
+    (zero radius) return minradius.'''
+    n = len(target)
+    while r < n and (r - l < m or target[r][k] - target[l][k] <= 0):
+        l, r, dy, inew = grow_interval(target, l, r, cy, k)
+    dist = [abs(target[j][k] - cy) for j in range(l, r)]
+    dist.sort()
+    yradius = (dist[-2] + dist[-1]) / 2. # midpoint betw 2 furthest pts
+    if yradius <= 0.:
+        yradius = minradius
+    return l, r, yradius
+
+
+def find_ratio(source, target, i, m):
+    '''find the ratio of side lengths enclosing at least m points
+    (and non-zero volume) on source vs
+    target axes, centered at target point i'''
+    cy = target[i][0]
+    ly, ry, yradius = find_radius(target, i, i + 1, cy, m)
+    ix = target[i][2] # index of this point in source list
+    lx, rx, xradius = find_radius(source, ix, ix + 1, source[ix][0], ry - ly)
+    if rx - lx > ry - ly: # need to expand yradius to match number of points
+        ly, ry, yradius = find_radius(target, ly, ry, cy, rx - lx)
+    return xradius / yradius
+
+
+def find_rect(target, i, m, ratio):
     '''target: sorted list of (y, x, ix) tuples;
     ratio: x/y ratio for desired box;
     m: number of points to use for density estimation;
@@ -194,10 +224,10 @@ def find_rect(target, m, i, ratio):
     yi = target[i][0]
     l = i
     r = i + 1
-    while r - l < m: # must enclose at least m points
-        l,r,dy = grow_interval(target, l, r, yi)
+    while r < n and (r - l < m or target[r][0] - target[l][0] <= 0.):
+        l,r,dy,last = grow_interval(target, l, r, yi)
     dx = dy * ratio
-    while True:
+    while r < n:
         nin = 0
         dxNext = float('inf') # positive infinity
         for j in range(l, r): # count points within (dx, dy) box
@@ -206,24 +236,38 @@ def find_rect(target, m, i, ratio):
             elif abs(target[j][1] - xi) < dxNext:
                 dxNext = abs(target[j][1] - xi)
         if nin >= m:
-            return dx,dy,m,rect_points(target, dx, l, r, xi)
-        lnew,rnew,dnew = grow_interval(target, l, r, yi)
+            points = []
+            for j in range(l, r): # get list of points inside box
+                if abs(target[j][1] - xi) <= dx:
+                    points.append(j)
+            xradius = points_radius(target, points, i, 1)
+            yradius = points_radius(target, points, i, 0)
+            return r - l, xradius, yradius
+        lnew,rnew,dnew,ynew = grow_interval(target, l, r, yi)
         if dnew < dxNext / ratio: # expand [l,r]
             l,r,dy = lnew,rnew,dnew
             dx = dy * ratio
         else: # expand dx (within [l,r])
             dx = dxNext
-            dy = dx / ratio
 
-def rect_points(target, dx, l, r, xi):
+def points_radius(target, points, i, k=0):
+    '''get radius based on midpoint between furthest
+    and next furthest points '''
+    cx = target[i][k]
+    dist = [abs(target[j][k] - cx) for j in points]
+    dist.sort()
+    return (dist[-2] + dist[-1]) / 2.
+    
+
+def rect_points(target, l, r, xi, dx, k=0):
     '''return list of points in rectangle (dx,dy) as tuples (x-xi,y,x,ix)
     sorted in order of increasing distance from xi'''
-    l = []
+    points = []
     for j in range(l, r): # count points within (dx, dy) box
         if abs(target[j][1] - xi) <= dx:
-            l.append((abs(target[j][1] - xi),) + target[j])
-    l.sort()
-    return l
+            points.append((abs(target[j][1] - xi),) + target[j])
+    points.sort()
+    return points
 
 ## def find_x(source, x):
 ##     l = 0
@@ -246,11 +290,15 @@ def cond_density(vectors, m):
     target.sort()
     n = len(target)
     for i in range(n):
-        # TODO: need to compute rectangle side ratio around this point
-        dx,dy,m2,plist = find_rect(target, m, i, ratio)
-        dxmid = (plist[-2][0] + plist[-1][0]) / 2. # midpoint betw. m, m-1
-        ywidth = 2. * dxmid / ratio
-        l = source.searchsorted(target[i][1] - dxmid) # total w/in dxmid
-        r = source.searchsorted(target[i][1] + dxmid, side='right')
+        ratio = find_ratio(source, target, i, m)
+        m2,last_1,last = find_rect(target, i, m, ratio)
+        xwidth = (abs(target[last_1][1] - target[i][1])
+                 + abs(target[last][1] - target[i][1])) / 2. # midpoint
+        ywidth = (abs(target[last_1][0] - target[i][0])
+                 + abs(target[last][0] - target[i][0])) / 2. # midpoint
+        l = source.searchsorted(target[i][1] - xwidth) # total w/in dxmid
+        r = source.searchsorted(target[i][1] + xwidth, side='right')
         density = (m2 - 2) / ((r - l - 1) * ywidth)
-        
+
+
+    
