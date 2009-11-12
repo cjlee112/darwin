@@ -182,6 +182,20 @@ def grow_interval(target, l, r, cy, k=0):
 
 
 
+def grow_block(target, l, r, cy, k=0):
+    'expand interval by one or more points with same y-value'
+    n = len(target)
+    dy = None
+    while l > 0 or r < n:
+        lnew,rnew,dnew,ynew = grow_interval(target, l, r, cy, k)
+        if dy is not None and dnew > dy:
+            return l, r, dy, inew
+        l, r, dy, inew = lnew, rnew, dnew, ynew
+    if dy is None:
+        raise StopIteration # exhausted target
+    return l, r, dy, inew
+
+
 def find_radius(target, l, r, cy, m, k=0, minradius=1.):
     '''find box enclosing at least m points with non-zero volume.
     Then return radius for mid-point between m-th furthest point and
@@ -216,39 +230,52 @@ def find_rect(target, i, m, ratio):
     ratio: x/y ratio for desired box;
     m: number of points to use for density estimation;
     i: index of the center point in target[];
-    [l:r] is the current search interval'''
+    returns #points, xradius, yradius, points-list'''
     n = len(target)
     if n < m:
         raise IndexError('less than m points??')
     xi = target[i][1]
     yi = target[i][0]
-    l = i
-    r = i + 1
-    while r < n and (r - l < m or target[r][0] - target[l][0] <= 0.):
-        l,r,dy,last = grow_interval(target, l, r, yi)
-    dx = dy * ratio
-    while r < n:
+    l, r, dy, ynew = grow_block(target, i, i + 1, yi)
+    dxOuter = dy * ratio
+    dxLast = dxPrev = 0.
+    while True:
+        xradius = (dxLast + dxPrev) / 2. # midway between furthest two points
+        yradius = xradius / ratio
         nin = 0
         dxNext = float('inf') # positive infinity
-        for j in range(l, r): # count points within (dx, dy) box
-            if abs(target[j][1] - xi) <= dx:
+        for j in range(l, r): # count points within (xradius, yradius)
+            dx = abs(target[j][1] - xi)
+            if dx <= xradius and abs(target[j][0] - yi) <= yradius :
                 nin += 1
-            elif abs(target[j][1] - xi) < dxNext:
-                dxNext = abs(target[j][1] - xi)
-        if nin >= m:
-            points = []
-            for j in range(l, r): # get list of points inside box
-                if abs(target[j][1] - xi) <= dx:
-                    points.append(j)
-            xradius = points_radius(target, points, i, 1)
-            yradius = points_radius(target, points, i, 0)
-            return r - l, xradius, yradius
-        lnew,rnew,dnew,ynew = grow_interval(target, l, r, yi)
-        if dnew < dxNext / ratio: # expand [l,r]
-            l,r,dy = lnew,rnew,dnew
-            dx = dy * ratio
-        else: # expand dx (within [l,r])
-            dx = dxNext
+            elif dx > dxLast and dx < dxNext:
+                dxNext = dx
+        if nin > m and yradius > 0.:
+            return nin - 1, xradius, yradius, \
+                   rect_points(target, l, r, xi, yi, xradius, yradius)
+        dxPrev = dxLast
+        if dxOuter is None and dxNext == float('inf'):  # no more points
+            return nin - 1, xradius, yradius, \
+                   rect_points(target, l, r, xi, yi, xradius, yradius)
+        elif dxOuter is None or dxNext < dxOuter:
+            dxLast = dxNext
+        else: # expand our (l,r) interval
+            dxLast = dxOuter
+            try:
+                l,r,dy,ynew = grow_block(target, l, r, yi)
+                dxOuter = dy * ratio
+            except StopIteration:
+                dxOuter = None # no more points in target list
+
+
+def rect_points(target, l, r, cx, cy, xradius, yradius):
+    'get list of points inside rectangle defined by (cx,cy) and radii'
+    points = []
+    for j in range(l, r):
+        if abs(target[j][1] - cx) <= xradius \
+           and abs(target[j][0] - cy) <= yradius:
+            points.append(j)
+    return points
 
 def points_radius(target, points, i, k=0):
     '''get radius based on midpoint between furthest
@@ -258,26 +285,6 @@ def points_radius(target, points, i, k=0):
     dist.sort()
     return (dist[-2] + dist[-1]) / 2.
     
-
-def rect_points(target, l, r, xi, dx, k=0):
-    '''return list of points in rectangle (dx,dy) as tuples (x-xi,y,x,ix)
-    sorted in order of increasing distance from xi'''
-    points = []
-    for j in range(l, r): # count points within (dx, dy) box
-        if abs(target[j][1] - xi) <= dx:
-            points.append((abs(target[j][1] - xi),) + target[j])
-    points.sort()
-    return points
-
-## def find_x(source, x):
-##     l = 0
-##     r = len(source)
-##     while :
-##         mid = (l + r) / 2
-##         if source[mid][0] > x:
-##             r = mid
-##         else:
-##             l = 
 
 def cond_density(vectors, m):
     '''calculate conditional density using rectangle method,
@@ -291,14 +298,10 @@ def cond_density(vectors, m):
     n = len(target)
     for i in range(n):
         ratio = find_ratio(source, target, i, m)
-        m2,last_1,last = find_rect(target, i, m, ratio)
-        xwidth = (abs(target[last_1][1] - target[i][1])
-                 + abs(target[last][1] - target[i][1])) / 2. # midpoint
-        ywidth = (abs(target[last_1][0] - target[i][0])
-                 + abs(target[last][0] - target[i][0])) / 2. # midpoint
-        l = source.searchsorted(target[i][1] - xwidth) # total w/in dxmid
-        r = source.searchsorted(target[i][1] + xwidth, side='right')
-        density = (m2 - 2) / ((r - l - 1) * ywidth)
+        m2,xradius,yradius,points = find_rect(target, i, m, ratio)
+        l = source.searchsorted(target[i][1] - xradius) # total w/in xradius
+        r = source.searchsorted(target[i][1] + xradius, side='right')
+        density = m2 / ((r - l - 1) * yradius)
 
 
     
