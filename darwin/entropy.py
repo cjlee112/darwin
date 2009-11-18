@@ -172,7 +172,7 @@ def d2_entropy(v, m):
     return LogPVector( - numpy.log(dvec * ((m - 1.) / (n - 1.))))
 
 
-def grow_interval(target, l, r, cy, k=0):
+def grow_interval(target, l, r, cy, n, k=0):
     'expand interval on either left or right depending on which is closer'
     if l > 0 and \
         (r == n or abs(target[l-1][k] - cy) < abs(target[r][k] - cy)):
@@ -187,7 +187,7 @@ def grow_block(target, l, r, cy, k=0):
     n = len(target)
     dy = None
     while l > 0 or r < n:
-        lnew,rnew,dnew,ynew = grow_interval(target, l, r, cy, k)
+        lnew,rnew,dnew,ynew = grow_interval(target, l, r, cy, n, k)
         if dy is not None and dnew > dy:
             return l, r, dy, inew
         l, r, dy, inew = lnew, rnew, dnew, ynew
@@ -203,7 +203,7 @@ def find_radius(target, l, r, cy, m, k=0, minradius=1.):
     (zero radius) return minradius.'''
     n = len(target)
     while r < n and (r - l < m or target[r][k] - target[l][k] <= 0):
-        l, r, dy, inew = grow_interval(target, l, r, cy, k)
+        l, r, dy, inew = grow_interval(target, l, r, cy, n, k)
     dist = [abs(target[j][k] - cy) for j in range(l, r)]
     dist.sort()
     yradius = (dist[-2] + dist[-1]) / 2. # midpoint betw 2 furthest pts
@@ -234,8 +234,7 @@ def find_rect(target, i, m, ratio):
     n = len(target)
     if n < m:
         raise IndexError('less than m points??')
-    xi = target[i][1]
-    yi = target[i][0]
+    yi,xi = target[i][:2]
     l, r, dy, ynew = grow_block(target, i, i + 1, yi)
     dxOuter = dy * ratio
     dxLast = dxPrev = 0.
@@ -286,22 +285,22 @@ def points_radius(target, points, i, k=0):
     return (dist[-2] + dist[-1]) / 2.
     
 
-def cond_density(vectors, m):
+def cond_density(vectors, m, ratio=1.):
     '''calculate conditional density using rectangle method,
     m: number of points to use as sample '''
-    source = vectors.copy()
-    source.sort()
-    target = []
-    for i,p in enumerate(source):
-        target.append((p[1],p[0],i))
+    source = [t for t in vectors] # convert to list
+    source.sort() # sort tuples... numpy.sort() NOT usable for this
+    xdata = numpy.array([t[0] for t in source]) # 1D array for searchsorted
+    target = [(t[1],t[0],i) for (i,t) in enumerate(source)]
     target.sort()
     n = len(target)
+    dvec = numpy.core.zeros((n))
     for i in range(n):
-        ratio = find_ratio(source, target, i, m)
+        ## ratio = find_ratio(source, target, i, m)
         m2,xradius,yradius,points = find_rect(target, i, m, ratio)
-        l = source.searchsorted(target[i][1] - xradius) # total w/in xradius
-        r = source.searchsorted(target[i][1] + xradius, side='right')
-        density = m2 / ((r - l - 1) * yradius)
-
+        l = xdata.searchsorted(target[i][1] - xradius) # total w/in xradius
+        r = xdata.searchsorted(target[i][1] + xradius, side='right')
+        dvec[i] = m2 / ((r - l - 1) * 2. * yradius)
+    return LogPVector( - numpy.log(dvec))
 
     
