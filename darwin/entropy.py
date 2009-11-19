@@ -230,14 +230,17 @@ def find_radius(target, l, r, cy, m, k=0, minradius=1.):
     m-1 th furthest point.  If all points have identical coordinates,
     (zero radius) return minradius.'''
     n = len(target)
-    while r < n and (r - l < m or target[r][k] - target[l][k] <= 0):
-        l, r, dy, inew = grow_interval(target, l, r, cy, n, k)
+    while r - l < m or target[r-1][k] - target[l][k] <= 0:
+        try:
+            l, r, dy, inew = grow_interval(target, l, r, cy, n, k)
+        except StopIteration:
+            break
     dist = [abs(target[j][k] - cy) for j in range(l, r)]
     dist.sort()
     yradius = (dist[-2] + dist[-1]) / 2. # midpoint betw 2 furthest pts
     if yradius <= 0.:
         yradius = minradius
-    return l, r, yradius
+    return l, r - 1, yradius
 
 
 def find_ratio(source, target, i, m):
