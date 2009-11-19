@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy
 from math import log, pi, sqrt
+import random
 
 def calc_dist(vectors):
     'calculate euclidean distance^2 for every vector pair'
@@ -151,8 +152,8 @@ def sample_Le(vectors, model):
     return LogPVector(logP)
 
 
-def d2_entropy(v, m):
-    '''experimental method for estimating entropy using mean-squared
+def d2_density(v, m):
+    '''experimental method for estimating density using mean-squared
     distance of a sample of m-1 closest points around a given point'''
     v.sort()
     n = len(v)
@@ -169,7 +170,33 @@ def d2_entropy(v, m):
             d2 += d * d
         dvec[c] = d2
     dvec = numpy.core.ones((n)) / numpy.sqrt(dvec * (12./(m - 1.)))
-    return LogPVector( - numpy.log(dvec * ((m - 1.) / (n - 1.))))
+    return dvec * ((m - 1.) / (n - 1.))
+
+def d_density(v, m):
+    '''experimental method for estimating density using mean
+    distance of a sample of m-1 closest points around a given point'''
+    v.sort()
+    n = len(v)
+    r = m
+    l = 0
+    dvec = numpy.core.zeros((n))
+    for c in range(n):
+        while r < n and abs(v[l] - v[c]) > abs(v[r] - v[c]):
+            r += 1
+            l += 1
+        d2 = 0.
+        for i in range(l, r):
+            d2 += abs(v[i] - v[c])
+        dvec[c] = d2
+    dvec = numpy.core.ones((n)) / (dvec * (4./(m - 1.)))
+    return dvec * ((m - 1.) / (n - 1.))
+
+def d2_entropy(v, m, use_d2=True):
+    if use_d2:
+        dvec = d2_density(v, m)
+    else:
+        dvec = d_density(v, m)
+    return LogPVector( - numpy.log(dvec))
 
 
 def grow_interval(target, l, r, cy, n, k=0):
@@ -198,8 +225,9 @@ def grow_block(target, l, r, cy, k=0):
 
 def find_radius(target, l, r, cy, m, k=0, minradius=1.):
     '''find box enclosing at least m points with non-zero volume.
+    target must be sorted list / array of tuples.
     Then return radius for mid-point between m-th furthest point and
-    m-t th furthest point.  If all points have identical coordinates,
+    m-1 th furthest point.  If all points have identical coordinates,
     (zero radius) return minradius.'''
     n = len(target)
     while r < n and (r - l < m or target[r][k] - target[l][k] <= 0):
@@ -283,16 +311,46 @@ def points_radius(target, points, i, k=0):
     dist = [abs(target[j][k] - cx) for j in points]
     dist.sort()
     return (dist[-2] + dist[-1]) / 2.
-    
 
-def cond_density(vectors, m, ratio=1.):
-    '''calculate conditional density using rectangle method,
-    m: number of points to use as sample '''
+
+def get_ratio(xdata, ydata, m, nsample):
+    '''calculate the ratio of xradius vs. yradius via sampling.
+    First calculates ratio on 1D projections of the data onto x, y axes.
+    Then recalculates ratio using 2D rectangle sampling method using the
+    ratio calculated from 1D data.
+    xdata, ydata must both be sorted'''
+    n = len(xdata)
+    sample = [random.randrange(n) for i in range(nsample)]
+    xrads = [find_radius(xdata, i, i + 1, xdata[i][0], m) for i in sample]
+    xrads = [(t[2] / (t[1] - t[0])) for t in xrads]
+    yrads = [find_radius(ydata, i, i + 1, ydata[i][0], m) for i in sample]
+    yrads = [(t[2] / (t[1] - t[0])) for t in yrads]
+    ratio = float(sum(xrads)) / sum(yrads)
+    # now we measure local radii / ratio for a sample of points
+    # using find_rect()
+    sample = [random.randrange(n) for i in range(nsample)]
+    ratios = []
+    for i in sample:
+        m2,xradius,yradius,points = find_rect(ydata, i, m, ratio)
+        # now measure average x/y radii at this point
+        xrads = [abs(ydata[i][1] - ydata[j][1]) for j in points]
+        yrads = [abs(ydata[i][0] - ydata[j][0]) for j in points]
+        ratios.append(float(sum(xrads)) / sum(yrads))
+    return sum(ratios) / nsample
+
+
+def cond_entropy(vectors, m, nsample=50):
+    '''calculate conditional entropy using rectangle method,
+    m: number of points to use as sample.
+
+    Is this calculation biased?  It seems to be systematically
+    overestimating the density (i.e. underestimating the entropy).'''
     source = [t for t in vectors] # convert to list
     source.sort() # sort tuples... numpy.sort() NOT usable for this
     xdata = numpy.array([t[0] for t in source]) # 1D array for searchsorted
     target = [(t[1],t[0],i) for (i,t) in enumerate(source)]
     target.sort()
+    ratio = get_ratio(source, target, m, nsample)
     n = len(target)
     dvec = numpy.core.zeros((n))
     for i in range(n):
