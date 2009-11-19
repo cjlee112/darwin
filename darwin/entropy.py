@@ -256,11 +256,13 @@ def find_ratio(source, target, i, m):
     return xradius / yradius
 
 
-def find_rect(target, i, m, ratio):
+def find_rect(target, i, m, ratio, nonZero=False):
     '''target: sorted list of (y, x, ix) tuples;
     ratio: x/y ratio for desired box;
     m: number of points to use for density estimation;
     i: index of the center point in target[];
+    nonZero=True forces find_rect() to return a pointset with non-zero
+    x radius (by expanding m if necessary until the xradius > 0).
     returns #points, xradius, yradius, points-list'''
     n = len(target)
     if n < m:
@@ -274,13 +276,15 @@ def find_rect(target, i, m, ratio):
         yradius = xradius / ratio
         nin = 0
         dxNext = float('inf') # positive infinity
+        dxSum = 0.
         for j in range(l, r): # count points within (xradius, yradius)
             dx = abs(target[j][1] - xi)
             if dx <= xradius and abs(target[j][0] - yi) <= yradius :
                 nin += 1
+                dxSum += dx
             elif dx > dxLast and dx < dxNext:
                 dxNext = dx
-        if nin > m and yradius > 0.:
+        if nin > m and yradius > 0. and (not nonZero or dxSum > 0.):
             return nin - 1, xradius, yradius, \
                    rect_points(target, l, r, xi, yi, xradius, yradius)
         dxPrev = dxLast
@@ -334,7 +338,7 @@ def get_ratio(xdata, ydata, m, nsample):
     sample = [random.randrange(n) for i in range(nsample)]
     ratios = []
     for i in sample:
-        m2,xradius,yradius,points = find_rect(ydata, i, m, ratio)
+        m2,xradius,yradius,points = find_rect(ydata, i, m, ratio, True)
         # now measure average x/y radii at this point
         xrads = [abs(ydata[i][1] - ydata[j][1]) for j in points]
         yrads = [abs(ydata[i][0] - ydata[j][0]) for j in points]
