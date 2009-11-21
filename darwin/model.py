@@ -1,10 +1,11 @@
 import UserDict
 
 class Node(object):
-    def __init__(self, state, depID=None, obsID=None):
+    def __init__(self, state, depID=None, obsID=None, obsDict=None):
         self.state = state
         self.depID = depID
         self.obsID = obsID
+        self.obsDict = obsDict
     def __hash__(self):
         return hash((self.state,self.depID,self.obsID))
     def __cmp__(self, other):
@@ -72,7 +73,12 @@ class StateGraph(UserDict.DictMixin):
         targets = self.graph[fromNode.state]
         d = {}
         for dest,edge in targets.items():
-            d[dest(fromNode, self.depID)] = edge
+            try:
+                toNode = dest(fromNode, self.depID)
+            except StopIteration: # end of path
+                pass
+            else:
+                d[toNode] = edge
         return d
 
     def __invert__(self):
@@ -96,8 +102,13 @@ class LinearState(object):
     def __call__(self, fromNode, depID):
         obsID = fromNode.obsID
         if obsID is None:
-            obsID = -1
-        return Node(self, depID, obsID + 1)
+            obsID = 0
+        else:
+            obsID += 1
+        if obsID < 0 or (fromNode.obsDict is not None
+                         and obsID >= len(fromNode.obsDict)):
+            raise StopIteration # no more observations
+        return Node(self, depID, obsID, fromNode.obsDict)
 
     def pmf(self, obs):
         return self.emission.pmf(obs)
@@ -105,6 +116,13 @@ class LinearState(object):
     def __hash__(self):
         return id(self)
 
+class LinearStateStop(object):
+    def __call__(self, fromNode, depID):
+        if fromNode.obsDict is not None \
+               and fromNode.obsID + 1 >= len(fromNode.obsDict):
+            return Node(self, depID) # exhausted obs, so transition to STOP
+        raise StopIteration # no path to STOP
+        
 class EmissionDict(dict):
     'state interface with arbitrary obs --> probability mapping'
     def pmf(self, obs):
@@ -143,41 +161,45 @@ def p_backwards(dg, obsDict, node=START, b=None):
     'backwards probability algorithm'
     if b is None:
         b = {}
+        node.obsDict = obsDict
     prod = 1.
     for sg in dg[node]: # multiple dependencies multiply...
         p = 0.
+        hasTransitions = False
         for dest,edge in sg.items(): # multiple states sum...
+            if dest.depID == 'STOP':
+                b[node] = 1.
+                return b
+            hasTransitions = True
             pObs = 1.
             try:
                 obs = obsDict[dest]
             except KeyError: # exhausted obs, terminate here
-                b[node] = 1.
-                return b
-            for po in dest.state.pmf(obs):
-                pObs *= po
+                pass
+            else:
+                for po in dest.state.pmf(obs):
+                    pObs *= po
             try:
                 p += b[dest] * edge * pObs
             except KeyError:  # need to compute this value
                 p_backwards(dg, obsDict, dest, b)
                 p += b[dest] * edge * pObs
-        prod *= p
+        if hasTransitions:
+            prod *= p
     b[node] = prod
     return b
 
         
 def ocd_test(p6=.5):
+    'Occasionally Dishonest Casino example'
     p = (1. - p6) / 5.
-    loaded = EmissionDict()
-    loaded[6] = p6
-    for i in range(1, 6):
-        loaded[i] = p
-    fair = EmissionDict()
-    for i in range(1, 7):
-        fair[i] = 1./6.
-    F = LinearState(fair)
-    L = LinearState(loaded)
+    L = LinearState(EmissionDict({1:p, 2:p, 3:p, 4:p, 5:p, 6:p6}))
+    p = 1. / 6.
+    F = LinearState(EmissionDict({1:p, 2:p, 3:p, 4:p, 5:p, 6:p}))
+    stop = LinearStateStop()
     sg = StateGraph({F:{F:0.95, L:0.05}, L:{F:0.1, L:0.9}})
     prior = StateGraph({'START':{F:2./3., L:1./3.}})
-    dg = DependencyGraph({0:[sg], 'START':[prior]})
+    term = StateGraph({F:{stop:1.}, L:{stop:1.}}, 'STOP')
+    dg = DependencyGraph({0:[sg, term], 'START':[prior]})
     return dg
 
