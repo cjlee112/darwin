@@ -168,13 +168,13 @@ def p_backwards(dg, obsDict, node=START, b=None):
         hasTransitions = False
         for dest,edge in sg.items(): # multiple states sum...
             if dest.depID == 'STOP':
-                b[node] = 1.
-                return b
+                b[node] = edge
+                return b # exhausted obs, terminate here
             hasTransitions = True
             pObs = 1.
             try:
                 obs = obsDict[dest]
-            except KeyError: # exhausted obs, terminate here
+            except KeyError: # allow nodes with no obs
                 pass
             else:
                 for po in dest.state.pmf(obs):
