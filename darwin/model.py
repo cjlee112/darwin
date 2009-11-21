@@ -47,6 +47,22 @@ class DependencyGraph(UserDict.DictMixin):
         stateGraphs = self.graph[depID]
         return [sg[k] for sg in stateGraphs] # list of state graphs
 
+    def __invert__(self):
+        'generate inverse dependency graph'
+        try:
+            return self._inverse
+        except AttributeError:
+            pass
+        inv = {}
+        for k,v in self.graph.items():
+            for sg in v:
+                sgInv = ~sg
+                sgInv.depID = k
+                inv.setdefault(sg.depID, []).append(sgInv)
+        self._inverse = self.__class__(inv, self.obsDict)
+        self._inverse._inverse = self
+        return self._inverse
+
 class StateGraph(UserDict.DictMixin):
     def __init__(self, graph, depID=0):
         self.graph = graph
@@ -59,16 +75,35 @@ class StateGraph(UserDict.DictMixin):
             d[dest(fromNode, self.depID)] = edge
         return d
 
+    def __invert__(self):
+        try:
+            return self._inverse
+        except AttributeError:
+            pass
+        inv = {}
+        for src,d in self.graph.items():
+            for dest,edge in d.items():
+                inv.setdefault(dest, {})[src] = edge
+        self._inverse = self.__class__(inv, self.depID)
+        self._inverse._inverse = self
+        return self._inverse
+        
 
 class LinearState(object):
-    def __init__(self, state):
-        self.state = state
+    def __init__(self, emission):
+        self.emission = emission
 
     def __call__(self, fromNode, depID):
         obsID = fromNode.obsID
         if obsID is None:
             obsID = -1
-        return Node(self.state, depID, obsID + 1)
+        return Node(self, depID, obsID + 1)
+
+    def pmf(self, obs):
+        return self.emission.pmf(obs)
+
+    def __hash__(self):
+        return id(self)
 
 class EmissionDict(dict):
     'state interface with arbitrary obs --> probability mapping'
@@ -96,7 +131,7 @@ def simulate_seq(dg, n):
         s.append(dest)
         p = random.random()
         total = 0.
-        for o,edge in dest.state.items(): # generate observation
+        for o,edge in dest.state.emission.items(): # generate observation
             total += edge
             if p <= total:
                 break;
@@ -141,7 +176,7 @@ def ocd_test(p6=.5):
         fair[i] = 1./6.
     F = LinearState(fair)
     L = LinearState(loaded)
-    sg = StateGraph({fair:{F:0.95, L:0.05}, loaded:{F:0.1, L:0.9}})
+    sg = StateGraph({F:{F:0.95, L:0.05}, L:{F:0.1, L:0.9}})
     prior = StateGraph({'START':{F:2./3., L:1./3.}})
     dg = DependencyGraph({0:[sg], 'START':[prior]})
     return dg
