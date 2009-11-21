@@ -44,8 +44,8 @@ class DependencyGraph(UserDict.DictMixin):
             depID = k.depID
         except AttributeError:
             raise KeyError('key not in this DependencyGraph')
-        stateGraph = self.graph[depID]
-        return stateGraph[k] # construct a state graph for this node
+        stateGraphs = self.graph[depID]
+        return [sg[k] for sg in stateGraphs] # list of state graphs
 
 class StateGraph(UserDict.DictMixin):
     def __init__(self, graph, depID=0):
@@ -87,10 +87,12 @@ def simulate_seq(dg, n):
     for i in range(n):
         p = random.random()
         total = 0.
-        for dest,edge in dg[node].items(): # choose next state
-            total += edge
-            if p <= total:
-                break;
+        for sg in dg[node]:
+            for dest,edge in sg.items(): # choose next state
+                total += edge
+                if p <= total:
+                    break;
+            break # this algorithm can only handle linear chain ...
         s.append(dest)
         p = random.random()
         total = 0.
@@ -106,22 +108,25 @@ def p_backwards(dg, obsDict, node=START, b=None):
     'backwards probability algorithm'
     if b is None:
         b = {}
-    p = 0.
-    for dest,edge in dg[node].items():
-        pObs = 1.
-        try:
-            obs = obsDict[dest]
-        except KeyError: # exhausted obs, terminate here
-            b[node] = 1.
-            return b
-        for po in dest.state.pmf(obs):
-            pObs *= po
-        try:
-            p += b[dest] * edge * pObs
-        except KeyError:  # need to compute this value
-            p_backwards(dg, obsDict, dest, b)
-            p += b[dest] * edge * pObs
-    b[node] = p
+    prod = 1.
+    for sg in dg[node]: # multiple dependencies multiply...
+        p = 0.
+        for dest,edge in sg.items(): # multiple states sum...
+            pObs = 1.
+            try:
+                obs = obsDict[dest]
+            except KeyError: # exhausted obs, terminate here
+                b[node] = 1.
+                return b
+            for po in dest.state.pmf(obs):
+                pObs *= po
+            try:
+                p += b[dest] * edge * pObs
+            except KeyError:  # need to compute this value
+                p_backwards(dg, obsDict, dest, b)
+                p += b[dest] * edge * pObs
+        prod *= p
+    b[node] = prod
     return b
 
         
@@ -138,6 +143,6 @@ def ocd_test(p6=.5):
     L = LinearState(loaded)
     sg = StateGraph({fair:{F:0.95, L:0.05}, loaded:{F:0.1, L:0.9}})
     prior = StateGraph({'START':{F:2./3., L:1./3.}})
-    dg = DependencyGraph({0:sg, 'START':prior})
+    dg = DependencyGraph({0:[sg], 'START':[prior]})
     return dg
 
