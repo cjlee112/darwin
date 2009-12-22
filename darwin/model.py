@@ -65,17 +65,20 @@ class DependencyGraph(UserDict.DictMixin):
         return self._inverse
 
 class StateGraph(UserDict.DictMixin):
+    '''Provides graph interface to nodes in HMM '''
     def __init__(self, graph, depID=0):
+        '''graph supplies the allowed state-state transitions '''
         self.graph = graph
         self.depID = depID
 
     def __getitem__(self, fromNode):
+        '''return dict of destination nodes & edges for fromNode '''
         targets = self.graph[fromNode.state]
         d = {}
         for dest,edge in targets.items():
-            try:
+            try: # construct destination node using dest type
                 toNode = dest(fromNode, self.depID)
-            except StopIteration: # end of path
+            except StopIteration: # no valid destination from here
                 pass
             else:
                 d[toNode] = edge
@@ -94,12 +97,19 @@ class StateGraph(UserDict.DictMixin):
         self._inverse._inverse = self
         return self._inverse
         
+# state classes
+#
+# __call__() interface allows each state type to control how it
+# "moves" in obs space, e.g. a linear chain state just advances the
+# obsID +1; a pairwise match state could advance both x,y +1... etc.
 
 class LinearState(object):
+    '''Models a state in a linear chain '''
     def __init__(self, emission):
         self.emission = emission
 
     def __call__(self, fromNode, depID):
+        '''Construct next node in HMM after fromNode'''
         obsID = fromNode.obsID
         if obsID is None:
             obsID = 0
@@ -107,10 +117,11 @@ class LinearState(object):
             obsID += 1
         if obsID < 0 or (fromNode.obsDict is not None
                          and obsID >= len(fromNode.obsDict)):
-            raise StopIteration # no more observations
+            raise StopIteration # no more observations, so HMM ends here
         return Node(self, depID, obsID, fromNode.obsDict)
 
     def pmf(self, obs):
+        '''Generate likelihoods for obs set '''
         return self.emission.pmf(obs)
 
     def __hash__(self):
@@ -118,9 +129,10 @@ class LinearState(object):
 
 class LinearStateStop(object):
     def __call__(self, fromNode, depID):
+        '''Only return STOP node if at the end of the obs set '''
         if fromNode.obsDict is not None \
                and fromNode.obsID + 1 >= len(fromNode.obsDict):
-            return Node(self, depID) # exhausted obs, so transition to STOP
+            return STOP # exhausted obs, so transition to STOP
         raise StopIteration # no path to STOP
         
 class EmissionDict(dict):
@@ -157,19 +169,23 @@ def simulate_seq(dg, n):
         node = dest
     return s,obs
 
-def p_backwards(dg, obsDict, node=START, b=None):
-    'backwards probability algorithm'
+def p_backwards(dg, obsDict, node=START, b=None, g=None):
+    '''backwards probability algorithm
+    Begins at START by default'''
     if b is None:
         b = {}
+        g = {}
         node.obsDict = obsDict
     prod = 1.
     for sg in dg[node]: # multiple dependencies multiply...
         p = 0.
         hasTransitions = False
         for dest,edge in sg.items(): # multiple states sum...
+            g.setdefault(dest, {})[node] = edge # save reverse graph
             if dest.depID == 'STOP':
-                b[node] = edge
-                return b # exhausted obs, terminate here
+                p += edge
+                hasTransitions = True
+                continue
             hasTransitions = True
             pObs = 1.
             try:
@@ -182,14 +198,37 @@ def p_backwards(dg, obsDict, node=START, b=None):
             try:
                 p += b[dest] * edge * pObs
             except KeyError:  # need to compute this value
-                p_backwards(dg, obsDict, dest, b)
+                p_backwards(dg, obsDict, dest, b, g)
                 p += b[dest] * edge * pObs
         if hasTransitions:
             prod *= p
     b[node] = prod
     return b
 
-        
+def p_forwards(g, obsDict, node, f):
+    # can we calculate forward using depID to see the dependency structure?
+    try:
+        prevs = g[node]
+    except KeyError:
+        f[node] = 1.
+        return
+    d = {}
+    for src,edge in prevs.items():
+        d.setdefault(src.depID, {})[src] = edge
+    for depID,sources in d.items():
+        for src,edge in sources.items():
+            pass
+
+def calc_fb(dg, obsDict):
+    b = {}
+    g = {}
+    p_backwards(db, obsDict, b=b, g=g)
+    for stop in g: # find the terminal STOP node
+        if stop.depID == 'STOP':
+            break
+    f = p_forwards(g, obsDict, stop, {})
+    return f, b
+
 def ocd_test(p6=.5):
     'Occasionally Dishonest Casino example'
     p = (1. - p6) / 5.
