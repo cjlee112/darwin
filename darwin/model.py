@@ -253,7 +253,7 @@ def calc_fb(dg, obsDict):
     f = p_forwards(g, obsDict)
     return f, b
 
-def ocd_test(p6=.5):
+def ocd_test(p6=.5, n=100):
     'Occasionally Dishonest Casino example'
     p = (1. - p6) / 5.
     L = LinearState('L', EmissionDict({1:p, 2:p, 3:p, 4:p, 5:p, 6:p6}))
@@ -264,16 +264,16 @@ def ocd_test(p6=.5):
     prior = StateGraph({'START':{F:2./3., L:1./3.}})
     term = StateGraph({F:{stop:1.}, L:{stop:1.}}, 'STOP')
     dg = DependencyGraph({0:[sg, term], 'START':[prior]})
+
+    s,obs = simulate_seq(dg, n)
+    obsDict = obs_sequence(obs)
+    f, b = calc_fb(dg, obsDict)
+    pObs = b[START]
+    for i in range(n): # print posteriors
+        nodeF = Node(F, 0, i, obsDict)
+        nodeL = Node(L, 0, i, obsDict)
+        print '%s:%0.3f\t%s:%0.3f\tTRUE:%s,%d' % \
+              (nodeF, f[nodeF] * b[nodeF] / pObs,
+               nodeL, f[nodeL] * b[nodeL] / pObs,
+               s[i], obs[i])
     return dg
-
-
-# example test
-## >>> import model
-## >>> dg = model.ocd_test()
-## >>> s,obs = model.simulate_seq(dg, 100)
-## >>> obsDict = model.obs_sequence(obs)
-## >>> b = model.p_backwards(dg, obsDict)
-## >>> b[model.START]
-## 3.109491800482022e-78
-
-## f, b = calc_fb(dg, obsDict)
