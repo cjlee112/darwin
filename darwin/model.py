@@ -16,6 +16,8 @@ def log_sum(logX, logY):
 
 def log_sum_list(logList):
     'return log of sum of arguments passed in log-form'
+    if len(logList) == 1: # handle trivial case
+        return logList[0]
     top = max(logList)
     return top + log(sum([exp(x - top) for x in logList]))
     
@@ -138,34 +140,31 @@ class DependencyGraph(UserDict.DictMixin):
             node.obsDict = obsDict
         if g is None:
             g = {}
-        prod = 1.
+        logProd = 0.
         for sg in self[node]: # multiple dependencies multiply...
-            p = 0.
-            hasTransitions = False
+            logP = []
             for dest,edge in sg.items(): # multiple states sum...
                 g.setdefault(dest, {})[node] = edge # save reverse graph
                 if dest.depID == 'STOP':
-                    p += edge
-                    b.setdefault(dest, 1.)
-                    hasTransitions = True
+                    logP.append(safe_log(edge))
+                    b.setdefault(dest, 0.)
                     continue
-                hasTransitions = True
-                pObs = 1.
+                logPobs = 0.
                 try:
                     obs = obsDict[dest]
                 except KeyError: # allow nodes with no obs
                     pass
                 else:
                     for po in dest.state.pmf(obs):
-                        pObs *= po
+                        logPobs += safe_log(po)
                 try:
-                    p += b[dest] * edge * pObs
+                    logP.append(b[dest] + safe_log(edge) + logPobs)
                 except KeyError:  # need to compute this value
                     self.p_backwards(obsDict, dest, b, g)
-                    p += b[dest] * edge * pObs
-            if hasTransitions:
-                prod *= p
-        b[node] = prod
+                    logP.append(b[dest] + safe_log(edge) + logPobs)
+            if logP: # non-empty list
+                logProd += log_sum_list(logP)
+        b[node] = logProd
         return b
 
     def calc_fb(self, obsDict):
@@ -271,24 +270,24 @@ def p_forwards(g, obsDict, dest=STOP, f=None):
     if f is None:
         f = {}
     if dest.depID == 'START':
-        f[dest] = 1.
+        f[dest] = 0.
         return f
-    pObs = 1.
+    logPobs = 0.
     try:
         obs = obsDict[dest]
     except KeyError: # allow nodes with no obs
         pass
     else:
         for po in dest.state.pmf(obs):
-            pObs *= po
-    p = 0.
+            logPobs += safe_log(po)
+    logP = []
     for src,edge in g[dest].items():
         try:
-            p += f[src] * edge
+            logP.append(f[src] + safe_log(edge))
         except KeyError:  # need to compute this value
             p_forwards(g, obsDict, src, f)
-            p += f[src] * edge
-    f[dest] = p * pObs
+            logP.append(f[src] + safe_log(edge))
+    f[dest] = log_sum_list(logP) + logPobs
     return f
 
 
@@ -309,12 +308,12 @@ def ocd_test(p6=.5, n=100):
     s,obs = dg.simulate_seq(n)
     obsDict = obs_sequence(obs)
     f, b = dg.calc_fb(obsDict)
-    pObs = b[START]
+    logPobs = b[START]
     for i in range(n): # print posteriors
         nodeF = Node(F, 0, i, obsDict)
         nodeL = Node(L, 0, i, obsDict)
         print '%s:%0.3f\t%s:%0.3f\tTRUE:%s,%d' % \
-              (nodeF, f[nodeF] * b[nodeF] / pObs,
-               nodeL, f[nodeL] * b[nodeL] / pObs,
+              (nodeF, exp(f[nodeF] + b[nodeF] - logPobs),
+               nodeL, exp(f[nodeL] + b[nodeL] - logPobs),
                s[i], obs[i])
     return dg
