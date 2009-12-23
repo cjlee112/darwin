@@ -1,8 +1,38 @@
 import UserDict
+from math import *
+import random
+
+# log-probability convenience functions
+
+neginf = float('-inf') # IEEE754 negative infinity
+
+def log_sum(logX, logY):
+    'return log of sum of two arguments passed in log-form'
+    if logX < logY:
+        logX,logY = logY,logX
+    if logY == neginf:
+        return logX
+    return logX + log(1. + exp(logY - logX))
+
+def log_sum_list(logList):
+    'return log of sum of arguments passed in log-form'
+    top = max(logList)
+    return top + log(sum([exp(x - top) for x in logList]))
+    
+def safe_log(x):
+    "Doesn't blow up like math.log(0.) does"
+    if x==0.:
+        return neginf
+    return log(x)
+
 
 class Node(object):
-    '''Note that multiple Node instances with the same state, depID, obsID
-    will compare and hash as equal'''
+    '''Node class for compiled state-instance graphs.
+    Note that multiple Node instances with the same state, depID, obsID
+    will compare and hash as equal.  This enables different paths
+    to arrive at the same node even though they construct different
+    object instances -- the different instances will compare as
+    equal when looking them up in the forward - backward dictionaries.'''
     def __init__(self, state, depID=None, obsID=None, obsDict=None):
         self.state = state
         self.depID = depID
@@ -42,10 +72,15 @@ def obs_sequence(seq):
 
 class DependencyGraph(UserDict.DictMixin):
     def __init__(self, graph, obsDict=None):
+        '''graph represents the dependency structure; it must
+        be a dictionary whose keys are dependency group IDs, and
+        associated values are lists of state graphs that nodes in
+        this dependency group participate in.'''
         self.graph = graph
         self.obsDict = obsDict
 
     def __getitem__(self, k):
+        '''Return results from state graphs that this node participates in'''
         try:
             depID = k.depID
         except AttributeError:
@@ -68,6 +103,79 @@ class DependencyGraph(UserDict.DictMixin):
         self._inverse = self.__class__(inv, self.obsDict)
         self._inverse._inverse = self
         return self._inverse
+
+    def simulate_seq(self, n):
+        'simular markov chain of length n'
+        node = START
+        s = []
+        obs = []
+        for i in range(n):
+            p = random.random()
+            total = 0.
+            for sg in self[node]:
+                for dest,edge in sg.items(): # choose next state
+                    total += edge
+                    if p <= total:
+                        break;
+                break # this algorithm can only handle linear chain ...
+            s.append(dest)
+            p = random.random()
+            total = 0.
+            for o,edge in dest.state.emission.items(): # generate observation
+                total += edge
+                if p <= total:
+                    break;
+            obs.append(o)
+            node = dest
+        return s,obs
+
+    def p_backwards(self, obsDict, node=START, b=None, g=None):
+        '''backwards probability algorithm
+        Begins at START by default.
+        Returns backwards probabilities.'''
+        if b is None:
+            b = {}
+            node.obsDict = obsDict
+        if g is None:
+            g = {}
+        prod = 1.
+        for sg in self[node]: # multiple dependencies multiply...
+            p = 0.
+            hasTransitions = False
+            for dest,edge in sg.items(): # multiple states sum...
+                g.setdefault(dest, {})[node] = edge # save reverse graph
+                if dest.depID == 'STOP':
+                    p += edge
+                    b.setdefault(dest, 1.)
+                    hasTransitions = True
+                    continue
+                hasTransitions = True
+                pObs = 1.
+                try:
+                    obs = obsDict[dest]
+                except KeyError: # allow nodes with no obs
+                    pass
+                else:
+                    for po in dest.state.pmf(obs):
+                        pObs *= po
+                try:
+                    p += b[dest] * edge * pObs
+                except KeyError:  # need to compute this value
+                    self.p_backwards(obsDict, dest, b, g)
+                    p += b[dest] * edge * pObs
+            if hasTransitions:
+                prod *= p
+        b[node] = prod
+        return b
+
+    def calc_fb(self, obsDict):
+        '''Returns forward and backward probability matrices for all
+        possible states at all positions in the dependency graph'''
+        g = {}
+        b = self.p_backwards(obsDict, g=g)
+        f = p_forwards(g, obsDict)
+        return f, b
+
 
 class StateGraph(UserDict.DictMixin):
     '''Provides graph interface to nodes in HMM '''
@@ -107,13 +215,28 @@ class StateGraph(UserDict.DictMixin):
 # __call__() interface allows each state type to control how it
 # "moves" in obs space, e.g. a linear chain state just advances the
 # obsID +1; a pairwise match state could advance both x,y +1... etc.
+# Should raise StopIteration if no valid next node, e.g. if obs
+# are exhausted.  Since we are using a constructor interface,
+# we use StopIteration (rather than a return value like None) to
+# signal "no valid next node".
 
-class LinearState(object):
-    '''Models a state in a linear chain '''
+class State(object):
     def __init__(self, name, emission):
         self.emission = emission
         self.name = name
 
+    def pmf(self, obs):
+        '''Generate likelihoods for obs set '''
+        return self.emission.pmf(obs)
+
+    def __hash__(self):
+        return id(self)
+
+    def __repr__(self):
+        return self.name
+
+class LinearState(State):
+    '''Models a state in a linear chain '''
     def __call__(self, fromNode, depID):
         '''Construct next node in HMM after fromNode'''
         obsID = fromNode.obsID
@@ -125,16 +248,6 @@ class LinearState(object):
                          and obsID >= len(fromNode.obsDict)):
             raise StopIteration # no more observations, so HMM ends here
         return Node(self, depID, obsID, fromNode.obsDict)
-
-    def pmf(self, obs):
-        '''Generate likelihoods for obs set '''
-        return self.emission.pmf(obs)
-
-    def __hash__(self):
-        return id(self)
-
-    def __repr__(self):
-        return self.name
 
 class LinearStateStop(object):
     def __call__(self, fromNode, depID):
@@ -150,72 +263,6 @@ class EmissionDict(dict):
         return [self[o] for o in obs]
     def __hash__(self):
         return id(self)
-
-
-def simulate_seq(dg, n):
-    'simular markov chain of length n'
-    import random
-    node = START
-    s = []
-    obs = []
-    for i in range(n):
-        p = random.random()
-        total = 0.
-        for sg in dg[node]:
-            for dest,edge in sg.items(): # choose next state
-                total += edge
-                if p <= total:
-                    break;
-            break # this algorithm can only handle linear chain ...
-        s.append(dest)
-        p = random.random()
-        total = 0.
-        for o,edge in dest.state.emission.items(): # generate observation
-            total += edge
-            if p <= total:
-                break;
-        obs.append(o)
-        node = dest
-    return s,obs
-
-def p_backwards(dg, obsDict, node=START, b=None, g=None):
-    '''backwards probability algorithm
-    Begins at START by default.
-    Returns backwards probabilities.'''
-    if b is None:
-        b = {}
-        node.obsDict = obsDict
-    if g is None:
-        g = {}
-    prod = 1.
-    for sg in dg[node]: # multiple dependencies multiply...
-        p = 0.
-        hasTransitions = False
-        for dest,edge in sg.items(): # multiple states sum...
-            g.setdefault(dest, {})[node] = edge # save reverse graph
-            if dest.depID == 'STOP':
-                p += edge
-                b.setdefault(dest, 1.)
-                hasTransitions = True
-                continue
-            hasTransitions = True
-            pObs = 1.
-            try:
-                obs = obsDict[dest]
-            except KeyError: # allow nodes with no obs
-                pass
-            else:
-                for po in dest.state.pmf(obs):
-                    pObs *= po
-            try:
-                p += b[dest] * edge * pObs
-            except KeyError:  # need to compute this value
-                p_backwards(dg, obsDict, dest, b, g)
-                p += b[dest] * edge * pObs
-        if hasTransitions:
-            prod *= p
-    b[node] = prod
-    return b
 
 def p_forwards(g, obsDict, dest=STOP, f=None):
     '''g: reverse graph generated by p_backwards()
@@ -245,13 +292,7 @@ def p_forwards(g, obsDict, dest=STOP, f=None):
     return f
 
 
-def calc_fb(dg, obsDict):
-    '''Returns forward and backward probability matrices for all
-    possible states at all positions in the dependency graph'''
-    g = {}
-    b = p_backwards(dg, obsDict, g=g)
-    f = p_forwards(g, obsDict)
-    return f, b
+# test code
 
 def ocd_test(p6=.5, n=100):
     'Occasionally Dishonest Casino example'
@@ -265,9 +306,9 @@ def ocd_test(p6=.5, n=100):
     term = StateGraph({F:{stop:1.}, L:{stop:1.}}, 'STOP')
     dg = DependencyGraph({0:[sg, term], 'START':[prior]})
 
-    s,obs = simulate_seq(dg, n)
+    s,obs = dg.simulate_seq(n)
     obsDict = obs_sequence(obs)
-    f, b = calc_fb(dg, obsDict)
+    f, b = dg.calc_fb(obsDict)
     pObs = b[START]
     for i in range(n): # print posteriors
         nodeF = Node(F, 0, i, obsDict)
