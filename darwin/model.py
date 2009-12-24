@@ -52,6 +52,18 @@ class Node(object):
         return '<%s: %s (%s)>' % (repr(self.state), str(self.obsID),
                                   str(self.depID))
 
+    def log_p_obs(self, obsDict):
+        'compute total log-likelihood for all obs emitted by this node'
+        try:
+            obs = obsDict[self]
+        except KeyError: # allow nodes with no obs
+            return 0.
+        else:
+            logPobs = 0.
+            for po in self.state.pmf(obs):
+                logPobs += safe_log(po)
+            return logPobs
+
 
 START = Node('START', 'START')
 STOP = Node('STOP', 'STOP')
@@ -132,17 +144,17 @@ class DependencyGraph(UserDict.DictMixin):
         return s,obs
 
     def p_backwards(self, obsDict, node=START):
+        '''backwards probability algorithm
+        Begins at START by default.
+        Returns backwards probabilities.'''
         b = {}
         node.obsDict = obsDict
         g = {}
-        logPobsDict = {node:0.}
+        logPobsDict = {node:node.log_p_obs(obsDict)}
         self.p_backwards_sub(obsDict, node, b, g, logPobsDict)
         return b,g,logPobsDict
         
     def p_backwards_sub(self, obsDict, node, b, g, logPobsDict):
-        '''backwards probability algorithm
-        Begins at START by default.
-        Returns backwards probabilities.'''
         logProd = 0.
         for sg in self[node]: # multiple dependencies multiply...
             logP = []
@@ -151,15 +163,7 @@ class DependencyGraph(UserDict.DictMixin):
                 try:
                     logPobs = logPobsDict[dest]
                 except KeyError:
-                    logPobs = 0.
-                    try:
-                        obs = obsDict[dest]
-                    except KeyError: # allow nodes with no obs
-                        pass
-                    else:
-                        for po in dest.state.pmf(obs):
-                            logPobs += safe_log(po)
-                    logPobsDict[dest] = logPobs # save to cache
+                    logPobsDict[dest] = logPobs = dest.log_p_obs(obsDict)
                 if dest.depID == 'STOP':
                     logP.append(safe_log(edge))
                     b.setdefault(dest, 0.)
