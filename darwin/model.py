@@ -292,6 +292,31 @@ def p_forwards(g, obsDict, logPobsDict, dest=STOP, f=None):
     return f
 
 
+def posterior_ll(f, obsDict):
+    '''compute posterior log-likelihood list for each obs group.
+    Result is returned as dict of form {obsID:[ll1, ll2, ...]}'''
+    d = {}
+    for node,f_ti in f.items(): # join different states indexed by obsID
+        try:
+            obs = obsDict[node]
+        except KeyError: # allow nodes with no obs
+            continue
+        llObs = [f_ti] # 1st entry is f_ti w/o any obs likelihood included
+        for po in node.state.pmf(obs):
+            f_ti += safe_log(po)
+            llObs.append(f_ti)
+        d.setdefault(node.obsID, []).append(llObs)
+    llDict = {}
+    for obsID,ll in d.items():
+        nobs = len(ll[0]) # actually this is #obs + 1
+        logSum = []
+        for iobs in range(nobs): # sum over all states for each obs
+            logSum.append(log_sum_list([llstate[iobs] for llstate in ll]))
+        # posterior likelihood for each obs
+        llDict[obsID] = [(logSum[iobs] - logSum[iobs - 1])
+                         for iobs in range(1, nobs)]
+    return llDict
+
 # test code
 
 def ocd_test(p6=.5, n=100):
@@ -310,11 +335,12 @@ def ocd_test(p6=.5, n=100):
     obsDict = obs_sequence(obs)
     f, b, ll = dg.calc_fb(obsDict)
     logPobs = b[START]
+    llDict = posterior_ll(f, obsDict)
     for i in range(n): # print posteriors
         nodeF = Node(F, 0, i, obsDict)
         nodeL = Node(L, 0, i, obsDict)
-        print '%s:%0.3f\t%s:%0.3f\tTRUE:%s,%d' % \
+        print '%s:%0.3f\t%s:%0.3f\tTRUE:%s,%d,%0.3f' % \
               (nodeF, exp(f[nodeF] + b[nodeF] + ll[nodeF] - logPobs),
                nodeL, exp(f[nodeL] + b[nodeL] + ll[nodeL] - logPobs),
-               s[i], obs[i])
+               s[i], obs[i], exp(llDict[i][0]))
     return dg
