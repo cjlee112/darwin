@@ -30,52 +30,48 @@ def safe_log(x):
 
 class Node(object):
     '''Node class for compiled state-instance graphs.
-    Note that multiple Node instances with the same state, depID, obsID
+    Note that multiple Node instances with the same state, depID, obsTuple
     will compare and hash as equal.  This enables different paths
     to arrive at the same node even though they construct different
     object instances -- the different instances will compare as
     equal when looking them up in the forward - backward dictionaries.'''
-    def __init__(self, state, depID=None, obsID=None, obsDict=None):
+    def __init__(self, state, depID=None, obsTuple=(), obsDict=None):
         self.state = state
         self.depID = depID
-        self.obsID = obsID
+        self.obsTuple = obsTuple
         self.obsDict = obsDict
     def __hash__(self):
-        return hash((self.state,self.depID,self.obsID))
+        return hash((self.state,self.depID,self.obsTuple))
     def __cmp__(self, other):
         try:
-            return cmp((self.state,self.depID,self.obsID),
-                       (other.state,other.depID,other.obsID))
+            return cmp((self.state,self.depID,self.obsTuple),
+                       (other.state,other.depID,other.obsTuple))
         except AttributeError:
             return cmp(id(self), id(other))
     def __repr__(self):
-        return '<%s: %s (%s)>' % (repr(self.state), str(self.obsID),
+        return '<%s: %s (%s)>' % (repr(self.state), str(self.obsTuple),
                                   str(self.depID))
 
-    def log_p_obs(self, obsDict):
-        'compute total log-likelihood for all obs emitted by this node'
+    def get_ll_dict(self):
         try:
-            obs = obsDict[self]
-        except KeyError: # allow nodes with no obs
-            return 0.
-        else:
-            logPobs = 0.
-            for po in self.state.pmf(obs):
-                logPobs += safe_log(po)
-            return logPobs
+            f = self.state.get_ll_dict
+        except AttributeError: # START and STOP lack this method
+            return {}
+        return f(self)
+
+    def log_p_obs(self):
+        'compute total log-likelihood for all obs emitted by this node'
+        logPobs = 0.
+        for l in self.get_ll_dict().itervalues():
+            logPobs += sum(l)
+        return logPobs
 
 
 START = Node('START', 'START')
 STOP = Node('STOP', 'STOP')
 
 class ObservationDict(dict):
-    '''return set of observations for a model node '''
-    def __getitem__(self, node):
-        try:
-            obsID = node.obsID
-        except AttributeError:
-            raise KeyError('not a model node!')
-        return dict.__getitem__(self, obsID)
+    pass
 
 def obs_sequence(seq):
     'transform seq into a ObservationDict'
@@ -150,7 +146,7 @@ class DependencyGraph(UserDict.DictMixin):
         b = {}
         node.obsDict = obsDict
         g = {}
-        logPobsDict = {node:node.log_p_obs(obsDict)}
+        logPobsDict = {node:node.log_p_obs()}
         self.p_backwards_sub(obsDict, node, b, g, logPobsDict)
         return b,g,logPobsDict
         
@@ -163,7 +159,7 @@ class DependencyGraph(UserDict.DictMixin):
                 try:
                     logPobs = logPobsDict[dest]
                 except KeyError:
-                    logPobsDict[dest] = logPobs = dest.log_p_obs(obsDict)
+                    logPobsDict[dest] = logPobs = dest.log_p_obs()
                 if dest.depID == 'STOP':
                     logP.append(safe_log(edge))
                     b.setdefault(dest, 0.)
@@ -233,10 +229,17 @@ class State(object):
         self.emission = emission
         self.name = name
 
-    def pmf(self, obs):
-        '''Generate likelihoods for obs set '''
-        return self.emission.pmf(obs)
-
+    def get_ll_dict(self, node):
+        '''generate the log-likelihood of observations for node,
+        returned as a dict of the form {obsID:[ll1,ll2,...]}.
+        This baseclass method treats all obs as independent, but
+        subclasses can implement more interesting likelihood models'''
+        d = {}
+        for obsID in node.obsTuple:
+            d[obsID] = [safe_log(p)
+                        for p in self.emission.pmf(node.obsDict[obsID])]
+        return d
+                
     def __hash__(self):
         return id(self)
 
@@ -247,21 +250,20 @@ class LinearState(State):
     '''Models a state in a linear chain '''
     def __call__(self, fromNode, depID):
         '''Construct next node in HMM after fromNode'''
-        obsID = fromNode.obsID
-        if obsID is None:
+        try:
+            obsID = fromNode.obsTuple[0] + 1
+        except IndexError: # treat empty list as START: go to 1st obsID
             obsID = 0
-        else:
-            obsID += 1
         if obsID < 0 or (fromNode.obsDict is not None
                          and obsID >= len(fromNode.obsDict)):
             raise StopIteration # no more observations, so HMM ends here
-        return Node(self, depID, obsID, fromNode.obsDict)
+        return Node(self, depID, (obsID,), fromNode.obsDict)
 
 class LinearStateStop(object):
     def __call__(self, fromNode, depID):
         '''Only return STOP node if at the end of the obs set '''
         if fromNode.obsDict is not None \
-               and fromNode.obsID + 1 >= len(fromNode.obsDict):
+               and fromNode.obsTuple[0] + 1 >= len(fromNode.obsDict):
             return STOP # exhausted obs, so transition to STOP
         raise StopIteration # no path to STOP
         
@@ -297,15 +299,12 @@ def posterior_ll(f, obsDict):
     Result is returned as dict of form {obsID:[ll1, ll2, ...]}'''
     d = {}
     for node,f_ti in f.items(): # join different states indexed by obsID
-        try:
-            obs = obsDict[node]
-        except KeyError: # allow nodes with no obs
-            continue
-        llObs = [f_ti] # 1st entry is f_ti w/o any obs likelihood included
-        for po in node.state.pmf(obs):
-            f_ti += safe_log(po)
-            llObs.append(f_ti)
-        d.setdefault(node.obsID, []).append(llObs)
+        for obsID,ll in node.get_ll_dict().items():
+            llObs = [f_ti] # 1st entry is f_ti w/o any obs likelihood
+            for logP in ll:
+                f_ti += logP
+                llObs.append(f_ti)
+            d.setdefault(obsID, []).append(llObs)
     llDict = {}
     for obsID,ll in d.items():
         nobs = len(ll[0]) # actually this is #obs + 1
@@ -337,8 +336,8 @@ def ocd_test(p6=.5, n=100):
     logPobs = b[START]
     llDict = posterior_ll(f, obsDict)
     for i in range(n): # print posteriors
-        nodeF = Node(F, 0, i, obsDict)
-        nodeL = Node(L, 0, i, obsDict)
+        nodeF = Node(F, 0, (i,), obsDict)
+        nodeL = Node(L, 0, (i,), obsDict)
         print '%s:%0.3f\t%s:%0.3f\tTRUE:%s,%d,%0.3f' % \
               (nodeF, exp(f[nodeF] + b[nodeF] + ll[nodeF] - logPobs),
                nodeL, exp(f[nodeL] + b[nodeL] + ll[nodeL] - logPobs),
