@@ -73,11 +73,11 @@ STOP = Node('STOP', 'STOP')
 class ObservationDict(dict):
     pass
 
-def obs_sequence(seq):
+def obs_sequence(depID, seq):
     'transform seq into a ObservationDict'
     d = ObservationDict()
     for i,s in enumerate(seq):
-        d[i] = (s,)
+        d[depID,i] = (s,)
     return d
 
 class DependencyGraph(UserDict.DictMixin):
@@ -235,9 +235,13 @@ class State(object):
         This baseclass method treats all obs as independent, but
         subclasses can implement more interesting likelihood models'''
         d = {}
+        try:
+            f = self.emission.pmf
+        except AttributeError:
+            f = self.emission.pdf
         for obsID in node.obsTuple:
             d[obsID] = [safe_log(p)
-                        for p in self.emission.pmf(node.obsDict[obsID])]
+                        for p in f(node.obsDict[node.depID,obsID])]
         return d
                 
     def __hash__(self):
@@ -304,16 +308,16 @@ def posterior_ll(f, obsDict):
             for logP in ll:
                 f_ti += logP
                 llObs.append(f_ti)
-            d.setdefault(obsID, []).append(llObs)
+            d.setdefault((node.depID,obsID), []).append(llObs)
     llDict = {}
-    for obsID,ll in d.items():
+    for obsLabel,ll in d.items():
         nobs = len(ll[0]) # actually this is #obs + 1
         logSum = []
         for iobs in range(nobs): # sum over all states for each obs
             logSum.append(log_sum_list([llstate[iobs] for llstate in ll]))
         # posterior likelihood for each obs
-        llDict[obsID] = [(logSum[iobs] - logSum[iobs - 1])
-                         for iobs in range(1, nobs)]
+        llDict[obsLabel] = [(logSum[iobs] - logSum[iobs - 1])
+                            for iobs in range(1, nobs)]
     return llDict
 
 # test code
@@ -331,7 +335,7 @@ def ocd_test(p6=.5, n=100):
     dg = DependencyGraph({0:[sg, term], 'START':[prior]})
 
     s,obs = dg.simulate_seq(n)
-    obsDict = obs_sequence(obs)
+    obsDict = obs_sequence(0, obs)
     f, b, ll = dg.calc_fb(obsDict)
     logPobs = b[START]
     llDict = posterior_ll(f, obsDict)
@@ -341,5 +345,5 @@ def ocd_test(p6=.5, n=100):
         print '%s:%0.3f\t%s:%0.3f\tTRUE:%s,%d,%0.3f' % \
               (nodeF, exp(f[nodeF] + b[nodeF] + ll[nodeF] - logPobs),
                nodeL, exp(f[nodeL] + b[nodeL] + ll[nodeL] - logPobs),
-               s[i], obs[i], exp(llDict[i][0]))
+               s[i], obs[i], exp(llDict[(0,i)][0]))
     return dg
