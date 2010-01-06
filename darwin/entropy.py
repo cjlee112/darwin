@@ -100,9 +100,6 @@ class LogPVector(object):
 
 def box_entropy(vectors, m):
     '''calculate differential entropy using specified number of points m
-    pValue=0.4 implies 20% below lower bound, 20% above upper bound.
-    If you compare lower bound of -Le vs upper bound of He with these
-    p-values, implies ~4% probability that true -Le-He < estimated -Le-He
     vectors: sampled data points;
     m: number of nearest points to include in each density-sampling box'''
     if not hasattr(vectors, 'ndim'):
@@ -152,3 +149,108 @@ def sample_Le(vectors, model):
     model: likelihood model with pdf() method'''
     logP = numpy.log(model.pdf(vectors))
     return LogPVector(logP)
+
+
+def d2_entropy(v, m):
+    '''experimental method for estimating entropy using mean-squared
+    distance of a sample of m-1 closest points around a given point'''
+    v.sort()
+    n = len(v)
+    r = m
+    l = 0
+    dvec = numpy.core.zeros((n))
+    for c in range(n):
+        while r < n and abs(v[l] - v[c]) > abs(v[r] - v[c]):
+            r += 1
+            l += 1
+        d2 = 0.
+        for i in range(l, r):
+            d = v[i] - v[c]
+            d2 += d * d
+        dvec[c] = d2
+    dvec = numpy.core.ones((n)) / numpy.sqrt(dvec * (12./(m - 1.)))
+    return LogPVector( - numpy.log(dvec * ((m - 1.) / (n - 1.))))
+
+
+def grow_interval(target, l, r, yi):
+    'expand interval on either left or right depending on which is closer'
+    if l > 0 and \
+        (r == n or abs(target[l-1][0] - yi) < abs(target[r][0] - yi)):
+        return l - 1, r, abs(target[l-1][0] - yi)
+    else:
+        return l, r + 1, abs(target[r][0] - yi)
+
+
+def find_rect(target, m, i, ratio):
+    '''target: sorted list of (y, x, ix) tuples;
+    ratio: x/y ratio for desired box;
+    m: number of points to use for density estimation;
+    i: index of the center point in target[];
+    [l:r] is the current search interval'''
+    n = len(target)
+    if n < m:
+        raise IndexError('less than m points??')
+    xi = target[i][1]
+    yi = target[i][0]
+    l = i
+    r = i + 1
+    while r - l < m: # must enclose at least m points
+        l,r,dy = grow_interval(target, l, r, yi)
+    dx = dy * ratio
+    while True:
+        nin = 0
+        dxNext = float('inf') # positive infinity
+        for j in range(l, r): # count points within (dx, dy) box
+            if abs(target[j][1] - xi) <= dx:
+                nin += 1
+            elif abs(target[j][1] - xi) < dxNext:
+                dxNext = abs(target[j][1] - xi)
+        if nin >= m:
+            return dx,dy,m,rect_points(target, dx, l, r, xi)
+        lnew,rnew,dnew = grow_interval(target, l, r, yi)
+        if dnew < dxNext / ratio: # expand [l,r]
+            l,r,dy = lnew,rnew,dnew
+            dx = dy * ratio
+        else: # expand dx (within [l,r])
+            dx = dxNext
+            dy = dx / ratio
+
+def rect_points(target, dx, l, r, xi):
+    '''return list of points in rectangle (dx,dy) as tuples (x-xi,y,x,ix)
+    sorted in order of increasing distance from xi'''
+    l = []
+    for j in range(l, r): # count points within (dx, dy) box
+        if abs(target[j][1] - xi) <= dx:
+            l.append((abs(target[j][1] - xi),) + target[j])
+    l.sort()
+    return l
+
+## def find_x(source, x):
+##     l = 0
+##     r = len(source)
+##     while :
+##         mid = (l + r) / 2
+##         if source[mid][0] > x:
+##             r = mid
+##         else:
+##             l = 
+
+def cond_density(vectors, m):
+    '''calculate conditional density using rectangle method,
+    m: number of points to use as sample '''
+    source = vectors.copy()
+    source.sort()
+    target = []
+    for i,p in enumerate(source):
+        target.append((p[1],p[0],i))
+    target.sort()
+    n = len(target)
+    for i in range(n):
+        # TODO: need to compute rectangle side ratio around this point
+        dx,dy,m2,plist = find_rect(target, m, i, ratio)
+        dxmid = (plist[-2][0] + plist[-1][0]) / 2. # midpoint betw. m, m-1
+        ywidth = 2. * dxmid / ratio
+        l = source.searchsorted(target[i][1] - dxmid) # total w/in dxmid
+        r = source.searchsorted(target[i][1] + dxmid, side='right')
+        density = (m2 - 2) / ((r - l - 1) * ywidth)
+        
