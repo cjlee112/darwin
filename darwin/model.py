@@ -221,13 +221,19 @@ class DependencyGraph(UserDict.DictMixin):
         return f, b, fsub, bsub, logPobsDict
 
 class BasicHMM(DependencyGraph):
-    def __init__(self, stateGraphs, prior):
-        DependencyGraph.__init__(self, {0:stateGraphs, 'START':[prior]})
+    '''Convenience subclass for creating a simple linear-traversal HMM
+    given its state graph, priors, and termination edges.  Each of these
+    must be specified as a StateGraph whose nodes are states and whose
+    edge values are transition probabilities.'''
+    def __init__(self, sg, prior, term):
+        DependencyGraph.__init__(self, {0:{0:{0:{0:sg}},
+                                           'STOP':{0:{0:term}}},
+                                        'START':{0:{0:{0:prior}}}})
 
 class StateGraph(UserDict.DictMixin):
     '''Provides graph interface to nodes in HMM '''
     def __init__(self, graph):
-        '''graph supplies the allowed state-state transitions '''
+        '''graph supplies the allowed state-state transitions and probabilities'''
         self.graph = graph
 
     def __getitem__(self, fromNode):
@@ -384,9 +390,7 @@ def ocd_test(p6=.5, n=100):
     sg = StateGraph({F:{F:0.95, L:0.05}, L:{F:0.1, L:0.9}})
     prior = StateGraph({'START':{F:2./3., L:1./3.}})
     term = StateGraph({F:{stop:1.}, L:{stop:1.}})
-    dg = DependencyGraph({0:{0:{0:{0:sg}},
-                             'STOP':{0:{0:term}}},
-                          'START':{0:{0:{0:prior}}}})
+    dg = BasicHMM(sg, prior, term)
 
     s,obs = dg.simulate_seq(n)
     obsDict = obs_sequence(0, obs)
