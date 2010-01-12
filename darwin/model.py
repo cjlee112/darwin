@@ -27,30 +27,48 @@ def safe_log(x):
         return neginf
     return log(x)
 
+# basic classes for dependency - observation - state graphs
 
-class Node(object):
-    '''Node class for compiled state-instance graphs.
-    Note that multiple Node instances with the same state, depID, obsTuple
-    will compare and hash as equal.  This enables different paths
-    to arrive at the same node even though they construct different
-    object instances -- the different instances will compare as
-    equal when looking them up in the forward - backward dictionaries.'''
-    def __init__(self, state, depID=None, obsTuple=(), obsDict=None):
-        self.state = state
+class NodeID(object):
+    '''Represents label of a unique node in dependency-observation graph'''
+    def __init__(self, depID, obsTuple):
         self.depID = depID
         self.obsTuple = obsTuple
-        self.obsDict = obsDict
     def __hash__(self):
-        return hash((self.state,self.depID,self.obsTuple))
+        return hash((self.depID,self.obsTuple))
     def __cmp__(self, other):
         try:
-            return cmp((self.state,self.depID,self.obsTuple),
-                       (other.state,other.depID,other.obsTuple))
+            return cmp((self.depID,self.obsTuple),
+                       (other.depID,other.obsTuple))
+        except AttributeError:
+            return cmp(id(self), id(other))
+        
+
+class Node(object):
+    '''Node class for compiled state-instance graphs.  Note that
+    multiple Node instances with the same state, ruleID, obsTuple will
+    compare and hash as equal.  This enables different paths to arrive
+    at the same node even though they construct different object
+    instances -- the different instances will compare as equal when
+    looking them up in the forward - backward dictionaries.'''
+    def __init__(self, state, ruleID=None, obsTuple=(), obsDict=None,
+                 varID=0):
+        self.state = state
+        self.ruleID = ruleID
+        self.obsTuple = obsTuple
+        self.obsDict = obsDict
+        self.varID = varID
+    def __hash__(self):
+        return hash((self.state,self.ruleID,self.varID,self.obsTuple))
+    def __cmp__(self, other):
+        try:
+            return cmp((self.state,self.ruleID,self.varID,self.obsTuple),
+                       (other.state,other.ruleID,other.varID,other.obsTuple))
         except AttributeError:
             return cmp(id(self), id(other))
     def __repr__(self):
         return '<%s: %s (%s)>' % (repr(self.state), str(self.obsTuple),
-                                  str(self.depID))
+                                  str(self.ruleID))
 
     def get_ll_dict(self):
         try:
@@ -73,12 +91,23 @@ STOP = Node('STOP', 'STOP')
 class ObservationDict(dict):
     pass
 
-def obs_sequence(depID, seq):
+def obs_sequence(ruleID, seq, varID=0):
     'transform seq into a ObservationDict'
     d = ObservationDict()
     for i,s in enumerate(seq):
-        d[depID,i] = (s,)
+        d[ruleID,varID,i] = (s,)
     return d
+
+def linear_obs_graph(ruleID, seq):
+    'transform obs sequence into graph structure'
+    d = {}
+    nodeID = None
+    for i,s in enumerate(seq):
+        nextNode = NodeID(ruleID, i)
+        d[nodeID] = {nextNode:(s,)}
+        nodeID = nextNode
+    return d
+    
 
 class DependencyGraph(UserDict.DictMixin):
     def __init__(self, graph, obsDict=None):
@@ -91,12 +120,14 @@ class DependencyGraph(UserDict.DictMixin):
 
     def __getitem__(self, k):
         '''Return results from state graphs that this node participates in'''
-        try:
-            depID = k.depID
-        except AttributeError:
-            raise KeyError('key not in this DependencyGraph')
-        stateGraphs = self.graph[depID]
-        return [sg[k] for sg in stateGraphs] # list of state graphs
+        d = {} # groups nodes with same varID together
+        for ruleID,varGraph in self.graph[k.ruleID].items():
+            for varID,stateGraph in varGraph[k.varID].items():
+                for node,edge in stateGraph[k].items():
+                    node.ruleID = ruleID
+                    node.varID = varID
+                    d.setdefault(varID, {})[node] = edge
+        return d.values() # list of state graphs
 
     def __invert__(self):
         'generate inverse dependency graph'
@@ -108,8 +139,8 @@ class DependencyGraph(UserDict.DictMixin):
         for k,v in self.graph.items():
             for sg in v:
                 sgInv = ~sg
-                sgInv.depID = k
-                inv.setdefault(sg.depID, []).append(sgInv)
+                sgInv.ruleID = k
+                inv.setdefault(sg.ruleID, []).append(sgInv)
         self._inverse = self.__class__(inv, self.obsDict)
         self._inverse._inverse = self
         return self._inverse
@@ -161,13 +192,13 @@ class DependencyGraph(UserDict.DictMixin):
         for sg in self[node]: # multiple dependencies multiply...
             logP = []
             for dest,edge in sg.items(): # multiple states sum...
-                target = dest.depID,dest.obsTuple
+                target = dest.ruleID,dest.varID,dest.obsTuple
                 g.setdefault(dest, {})[node] = edge # save reverse graph
                 try:
                     logPobs = logPobsDict[dest]
                 except KeyError:
                     logPobsDict[dest] = logPobs = dest.log_p_obs()
-                if dest.depID == 'STOP':
+                if dest.ruleID == 'STOP':
                     logP.append(safe_log(edge))
                     b.setdefault(dest, 0.)
                     continue
@@ -189,13 +220,15 @@ class DependencyGraph(UserDict.DictMixin):
         f,fsub = p_forwards(g, logPobsDict, b, bsub)
         return f, b, fsub, bsub, logPobsDict
 
+class BasicHMM(DependencyGraph):
+    def __init__(self, stateGraphs, prior):
+        DependencyGraph.__init__(self, {0:stateGraphs, 'START':[prior]})
 
 class StateGraph(UserDict.DictMixin):
     '''Provides graph interface to nodes in HMM '''
-    def __init__(self, graph, depID=0):
+    def __init__(self, graph):
         '''graph supplies the allowed state-state transitions '''
         self.graph = graph
-        self.depID = depID
 
     def __getitem__(self, fromNode):
         '''return dict of destination nodes & edges for fromNode '''
@@ -203,7 +236,7 @@ class StateGraph(UserDict.DictMixin):
         d = {}
         for dest,edge in targets.items():
             try: # construct destination node using dest type
-                toNode = dest(fromNode, self.depID)
+                toNode = dest(fromNode)
             except StopIteration: # no valid destination from here
                 pass
             else:
@@ -219,7 +252,7 @@ class StateGraph(UserDict.DictMixin):
         for src,d in self.graph.items():
             for dest,edge in d.items():
                 inv.setdefault(dest, {})[src] = edge
-        self._inverse = self.__class__(inv, self.depID)
+        self._inverse = self.__class__(inv)
         self._inverse._inverse = self
         return self._inverse
         
@@ -250,7 +283,8 @@ class State(object):
             f = self.emission.pdf
         for obsID in node.obsTuple:
             d[obsID] = [safe_log(p)
-                        for p in f(node.obsDict[node.depID,obsID])]
+                        for p in f(node.obsDict[node.ruleID,node.varID,
+                                                obsID])]
         return d
                 
     def __hash__(self):
@@ -261,7 +295,7 @@ class State(object):
 
 class LinearState(State):
     '''Models a state in a linear chain '''
-    def __call__(self, fromNode, depID):
+    def __call__(self, fromNode):
         '''Construct next node in HMM after fromNode'''
         try:
             obsID = fromNode.obsTuple[0] + 1
@@ -270,10 +304,10 @@ class LinearState(State):
         if obsID < 0 or (fromNode.obsDict is not None
                          and obsID >= len(fromNode.obsDict)):
             raise StopIteration # no more observations, so HMM ends here
-        return Node(self, depID, (obsID,), fromNode.obsDict)
+        return Node(self, None, (obsID,), fromNode.obsDict)
 
 class LinearStateStop(object):
-    def __call__(self, fromNode, depID):
+    def __call__(self, fromNode):
         '''Only return STOP node if at the end of the obs set '''
         if fromNode.obsDict is not None \
                and fromNode.obsTuple[0] + 1 >= len(fromNode.obsDict):
@@ -297,13 +331,13 @@ def p_forwards(g, logPobsDict, b, bsub):
     return f,fsub
     
 def p_forwards_sub(g, logPobsDict, dest, b, bsub, f, fsub):
-    if dest.depID == 'START':
+    if dest.ruleID == 'START':
         f[dest] = 0.
         fsub[dest] = 0.
         return f
     logP = []
     logPall = []
-    target = dest.depID,dest.obsTuple # label of this location
+    target = dest.ruleID,dest.varID,dest.obsTuple # label of this location
     for src,edge in g[dest].items():
         try:
             logP.append(f[src] + logPobsDict[src] + safe_log(edge))
@@ -326,7 +360,7 @@ def posterior_ll(f):
             for logP in ll:
                 f_ti += logP
                 llObs.append(f_ti)
-            d.setdefault((node.depID,obsID), []).append(llObs)
+            d.setdefault((node.ruleID,obsID), []).append(llObs)
     llDict = {}
     for obsLabel,ll in d.items():
         nobs = len(ll[0]) # actually this is #obs + 1
@@ -349,8 +383,10 @@ def ocd_test(p6=.5, n=100):
     stop = LinearStateStop()
     sg = StateGraph({F:{F:0.95, L:0.05}, L:{F:0.1, L:0.9}})
     prior = StateGraph({'START':{F:2./3., L:1./3.}})
-    term = StateGraph({F:{stop:1.}, L:{stop:1.}}, 'STOP')
-    dg = DependencyGraph({0:[sg, term], 'START':[prior]})
+    term = StateGraph({F:{stop:1.}, L:{stop:1.}})
+    dg = DependencyGraph({0:{0:{0:{0:sg}},
+                             'STOP':{0:{0:term}}},
+                          'START':{0:{0:{0:prior}}}})
 
     s,obs = dg.simulate_seq(n)
     obsDict = obs_sequence(0, obs)
