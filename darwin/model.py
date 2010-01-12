@@ -29,17 +29,21 @@ def safe_log(x):
 
 # basic classes for dependency - observation - state graphs
 
-class NodeID(object):
-    '''Represents label of a unique node in dependency-observation graph'''
-    def __init__(self, depID, obsTuple):
-        self.depID = depID
+class Variable(object):
+    '''Represents label of a variable instance in
+    a dependency-observation graph'''
+    def __init__(self, ruleID, varID, obsTuple):
+        self.ruleID = ruleID
         self.obsTuple = obsTuple
+        self.varID = varID
+
     def __hash__(self):
-        return hash((self.depID,self.obsTuple))
+        return hash((self.ruleID,self.varID,self.obsTuple))
+
     def __cmp__(self, other):
         try:
-            return cmp((self.depID,self.obsTuple),
-                       (other.depID,other.obsTuple))
+            return cmp((self.ruleID,self.varID,self.obsTuple),
+                       (other.ruleID,other.varID,other.obsTuple))
         except AttributeError:
             return cmp(id(self), id(other))
         
@@ -54,21 +58,29 @@ class Node(object):
     def __init__(self, state, ruleID=None, obsTuple=(), obsDict=None,
                  varID=0):
         self.state = state
-        self.ruleID = ruleID
-        self.obsTuple = obsTuple
         self.obsDict = obsDict
-        self.varID = varID
+        self.var = Variable(ruleID, varID, obsTuple)
+
+    def set_label(self, ruleID, varID):
+        self.var.ruleID = ruleID
+        self.var.varID = varID
+
+    def get_obs_label(self, obsID):
+        return (self.var.ruleID, self.var.varID, obsID)
+        
     def __hash__(self):
-        return hash((self.state,self.ruleID,self.varID,self.obsTuple))
+        return hash((self.state,self.var))
+
     def __cmp__(self, other):
         try:
-            return cmp((self.state,self.ruleID,self.varID,self.obsTuple),
-                       (other.state,other.ruleID,other.varID,other.obsTuple))
+            return cmp((self.state,self.var),
+                       (other.state,other.var))
         except AttributeError:
             return cmp(id(self), id(other))
+
     def __repr__(self):
-        return '<%s: %s (%s)>' % (repr(self.state), str(self.obsTuple),
-                                  str(self.ruleID))
+        return '<%s: %s %s>' % (repr(self.state), str(self.var.obsTuple),
+                                  str((self.var.ruleID,self.var.varID)))
 
     def get_ll_dict(self):
         try:
@@ -98,15 +110,6 @@ def obs_sequence(ruleID, seq, varID=0):
         d[ruleID,varID,i] = (s,)
     return d
 
-def linear_obs_graph(ruleID, seq):
-    'transform obs sequence into graph structure'
-    d = {}
-    nodeID = None
-    for i,s in enumerate(seq):
-        nextNode = NodeID(ruleID, i)
-        d[nodeID] = {nextNode:(s,)}
-        nodeID = nextNode
-    return d
     
 
 class DependencyGraph(UserDict.DictMixin):
@@ -121,15 +124,14 @@ class DependencyGraph(UserDict.DictMixin):
     def __getitem__(self, k):
         '''Return results from state graphs that this node participates in'''
         d = {} # groups nodes with same varID together
-        for ruleID,varGraph in self.graph[k.ruleID].items():
-            for varID,stateGraph in varGraph[k.varID].items():
+        for ruleID,varGraph in self.graph[k.var.ruleID].items():
+            for varID,stateGraph in varGraph[k.var.varID].items():
                 for node,edge in stateGraph[k].items():
-                    node.ruleID = ruleID
-                    node.varID = varID
+                    node.set_label(ruleID, varID)
                     d.setdefault(varID, {})[node] = edge
         return d.values() # list of state graphs
 
-    def __invert__(self):
+    def __invert__(self): # REWRITE THIS for new ruleID:varID:sg structure!!
         'generate inverse dependency graph'
         try:
             return self._inverse
@@ -192,13 +194,12 @@ class DependencyGraph(UserDict.DictMixin):
         for sg in self[node]: # multiple dependencies multiply...
             logP = []
             for dest,edge in sg.items(): # multiple states sum...
-                target = dest.ruleID,dest.varID,dest.obsTuple
                 g.setdefault(dest, {})[node] = edge # save reverse graph
                 try:
                     logPobs = logPobsDict[dest]
                 except KeyError:
                     logPobsDict[dest] = logPobs = dest.log_p_obs()
-                if dest.ruleID == 'STOP':
+                if dest.var.ruleID == 'STOP':
                     logP.append(safe_log(edge))
                     b.setdefault(dest, 0.)
                     continue
@@ -209,7 +210,7 @@ class DependencyGraph(UserDict.DictMixin):
                     logP.append(b[dest] + safe_log(edge) + logPobs)
             if logP: # non-empty list
                 lsum = log_sum_list(logP)
-                bsub.setdefault(node, {})[target] = lsum
+                bsub.setdefault(node, {})[dest.var] = lsum
                 logProd += lsum
         b[node] = logProd
 
@@ -287,10 +288,9 @@ class State(object):
             f = self.emission.pmf
         except AttributeError:
             f = self.emission.pdf
-        for obsID in node.obsTuple:
+        for obsID in node.var.obsTuple:
             d[obsID] = [safe_log(p)
-                        for p in f(node.obsDict[node.ruleID,node.varID,
-                                                obsID])]
+                        for p in f(node.obsDict[node.get_obs_label(obsID)])]
         return d
                 
     def __hash__(self):
@@ -304,7 +304,7 @@ class LinearState(State):
     def __call__(self, fromNode):
         '''Construct next node in HMM after fromNode'''
         try:
-            obsID = fromNode.obsTuple[0] + 1
+            obsID = fromNode.var.obsTuple[0] + 1
         except IndexError: # treat empty list as START: go to 1st obsID
             obsID = 0
         if obsID < 0 or (fromNode.obsDict is not None
@@ -316,7 +316,7 @@ class LinearStateStop(object):
     def __call__(self, fromNode):
         '''Only return STOP node if at the end of the obs set '''
         if fromNode.obsDict is not None \
-               and fromNode.obsTuple[0] + 1 >= len(fromNode.obsDict):
+               and fromNode.var.obsTuple[0] + 1 >= len(fromNode.obsDict):
             return STOP # exhausted obs, so transition to STOP
         raise StopIteration # no path to STOP
         
@@ -337,13 +337,12 @@ def p_forwards(g, logPobsDict, b, bsub):
     return f,fsub
     
 def p_forwards_sub(g, logPobsDict, dest, b, bsub, f, fsub):
-    if dest.ruleID == 'START':
+    if dest.var.ruleID == 'START':
         f[dest] = 0.
         fsub[dest] = 0.
         return f
     logP = []
     logPall = []
-    target = dest.ruleID,dest.varID,dest.obsTuple # label of this location
     for src,edge in g[dest].items():
         try:
             logP.append(f[src] + logPobsDict[src] + safe_log(edge))
@@ -351,7 +350,7 @@ def p_forwards_sub(g, logPobsDict, dest, b, bsub, f, fsub):
             p_forwards_sub(g, logPobsDict, src, b, bsub, f, fsub)
             logP.append(f[src] + logPobsDict[src] + safe_log(edge))
         logPall.append(fsub[src] + safe_log(edge) + logPobsDict[dest]
-                       + b[src] - bsub[src][target])
+                       + b[src] - bsub[src][dest.var])
     f[dest] = log_sum_list(logP)
     fsub[dest] = log_sum_list(logPall)
 
@@ -366,7 +365,7 @@ def posterior_ll(f):
             for logP in ll:
                 f_ti += logP
                 llObs.append(f_ti)
-            d.setdefault((node.ruleID,obsID), []).append(llObs)
+            d.setdefault(node.get_obs_label(obsID), []).append(llObs)
     llDict = {}
     for obsLabel,ll in d.items():
         nobs = len(ll[0]) # actually this is #obs + 1
@@ -403,5 +402,5 @@ def ocd_test(p6=.5, n=100):
         print '%s:%0.3f\t%s:%0.3f\tTRUE:%s,%d,%0.3f' % \
               (nodeF, exp(fsub[nodeF] + b[nodeF] - logPobs),
                nodeL, exp(fsub[nodeL] + b[nodeL] - logPobs),
-               s[i], obs[i], exp(llDict[(0,i)][0]))
+               s[i], obs[i], exp(llDict[nodeF.get_obs_label(i)][0]))
     return dg
