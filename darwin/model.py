@@ -123,12 +123,12 @@ class DependencyGraph(UserDict.DictMixin):
 
     def __getitem__(self, k):
         '''Return results from state graphs that this node participates in'''
-        d = {} # groups nodes with same varID together
+        d = {} # groups nodes with same ruleID,varID together
         for ruleID,varGraph in self.graph[k.var.ruleID].items():
             for varID,stateGraph in varGraph[k.var.varID].items():
                 for node,edge in stateGraph[k].items():
                     node.set_label(ruleID, varID)
-                    d.setdefault(varID, {})[node] = edge
+                    d.setdefault((ruleID,varID), {})[node] = edge
         return d.values() # list of state graphs
 
     def __invert__(self): # REWRITE THIS for new ruleID:varID:sg structure!!
