@@ -196,5 +196,65 @@ I.I.D. for each plant with a binomial probability
 out of the 100 pea plants he's seen over the last five years, he
 estimates this binomial probability to be 1%.
 
+To model this, we first create objects representing the two possible
+states of this hidden variable::
+
+   >>> from darwin.model import *
+   >>> emitPu = modelPu.get_phenotypes()[0]
+   >>> emitWh = modelWh.get_phenotypes()[0]
+   >>> pstate = LinearState('Pu', emitPu)
+   >>> wstate = LinearState('Wh', emitWh)
+
+We specify the prior probability for each state as a transition probability
+from the initial 'START' state::
+
+   >>> prior = StateGraph({'START':{pstate:0.9, wstate:0.1}})
+
+We also need to specify that each state can "exit" to the terminal 'STOP'
+state::
+
+   >>> stop = LinearStateStop()
+   >>> term = StateGraph({pstate:{stop:1.}, wstate:{stop:1.}})
+
+Next we create independent phenotype variables for each of the 20 plants
+we are modeling::
+
+   >>> d = {}
+   >>> for plant in range(20):
+   ...    d[plant] = prior
+   ...
+
+We assemble these into the final *dependency graph* that shows the structure
+of these variables; here we merely draw them as a star-topology from the 
+initial 'START' state::
+
+   >>> dg = DependencyGraph({'START':{0:{0:d}}})
+
+Finally, we package each plant's observations in an *observation dictionary*
+keyed by the possible plant IDs::
+
+   >>> obsDict = {}
+   >>> for plant in range(2): # two white plants
+   >>>    obsDict[(0,plant,0)] = emitWh.rvs(100)
+   ...
+   >>> for plant in range(2, 20): # 18 purple plants
+   >>>    obsDict[(0,plant,0)] = emitPu.rvs(100)
+   ...
+
+We now compute the model probabilities using the forward-backward
+algorithm::
+
+   >>> f, b, fsub, bsub, ll = dg.calc_fb(obsDict)
+   >>> logPobs = b[START]
+
+This gives us the total log-probability of the entire set of observations.
+We can also compute the posterior likelihood of each of the observations::
+
+   >>> llDict = posterior_ll(f)
+
+This analyzes the likelihood of each observation conditioned on all 
+previous observations.  For example, once the model sees several white
+flowers from one plant, it will predict that future flowers from that
+plant will probably be white as well.
 
 
