@@ -141,6 +141,9 @@ is the *posterior likelihood*, which predicts the probability of a
 given observation properly taking into account both the model and
 all *previous* observations.  Note that this is computed over all
 possible hidden states that could have emitted this observation.
+
+.. math:: p(X_t|\vec{X}_1^{t-1})=\frac{\sum_i{p(\vec{X}_1^t,\Theta_t=s_i)}}{\sum_i{p(\vec{X}_1^{t-1},\Theta_t=s_i)}}
+
 We simply compute this from the forward probabilities::
 
     >>> llDict = posterior_ll(f)

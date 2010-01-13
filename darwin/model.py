@@ -284,13 +284,14 @@ class State(object):
         This baseclass method treats all obs as independent, but
         subclasses can implement more interesting likelihood models'''
         d = {}
-        try:
-            f = self.emission.pmf
-        except AttributeError:
-            f = self.emission.pdf
+        def get_plist(obs): # workaround to fall back to pdf() method if needed
+            try: # scipy.stats models return pmf attr even it doesn't exist...
+                return self.emission.pmf(obs)
+            except AttributeError:
+                return self.emission.pdf(obs)
         for obsID in node.var.obsTuple:
-            d[obsID] = [safe_log(p)
-                        for p in f(node.obsDict[node.get_obs_label(obsID)])]
+            d[obsID] = [safe_log(p) for p in
+                        get_plist(node.obsDict[node.get_obs_label(obsID)])]
         return d
                 
     def __hash__(self):
