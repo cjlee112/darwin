@@ -258,4 +258,49 @@ previous observations.  For example, once the model sees several white
 flowers from one plant, it will predict that future flowers from that
 plant will probably be white as well.
 
+We can use these posterior likelihoods to compute the empirical information
+gain versus the previous mixture model::
+
+   >>> for plant in range(20):
+   ...     obs = obsDict[(0,plant,0)]
+   ...     Le = entropy.LogPVector(numpy.array(llDict[(0,plant,0)]))
+   ...     LeMix = entropy.sample_Le(obs, modelMix)
+   ...     Ie = Le - LeMix
+   ...     He = entropy.box_entropy(obs, 7)
+   ...     Ip = -Le - He
+   ...     print 'plant %d, Ie > %1.3f, mean = %1.3f\tIp > %1.3f, mean = %1.3f' \
+   ...           % (plant, Ie.get_bound(), Ie.mean, Ip.get_bound(), Ip.mean)
+   ...
+   plant 0, Ie > 2.207, mean = 2.280	Ip > -0.114, mean = 0.019
+   plant 1, Ie > 2.207, mean = 2.280	Ip > -0.114, mean = 0.000
+   plant 2, Ie > 0.101, mean = 0.104	Ip > -0.151, mean = -0.048
+   plant 3, Ie > 0.101, mean = 0.104	Ip > -0.117, mean = 0.012
+   plant 4, Ie > 0.101, mean = 0.104	Ip > -0.142, mean = -0.020
+   plant 5, Ie > 0.101, mean = 0.104	Ip > -0.120, mean = 0.053
+   plant 6, Ie > 0.101, mean = 0.104	Ip > -0.069, mean = 0.047
+   plant 7, Ie > 0.101, mean = 0.104	Ip > -0.097, mean = 0.067
+   plant 8, Ie > 0.101, mean = 0.104	Ip > -0.130, mean = -0.006
+   plant 9, Ie > 0.101, mean = 0.104	Ip > -0.127, mean = -0.001
+   plant 10, Ie > 0.101, mean = 0.104	Ip > -0.107, mean = 0.017
+   plant 11, Ie > 0.101, mean = 0.104	Ip > -0.112, mean = -0.025
+   plant 12, Ie > 0.101, mean = 0.104	Ip > -0.066, mean = 0.066
+   plant 13, Ie > 0.101, mean = 0.104	Ip > -0.110, mean = 0.010
+   plant 14, Ie > 0.101, mean = 0.104	Ip > -0.044, mean = 0.115
+   plant 15, Ie > 0.101, mean = 0.104	Ip > -0.096, mean = -0.018
+   plant 16, Ie > 0.101, mean = 0.104	Ip > -0.061, mean = 0.056
+   plant 17, Ie > 0.101, mean = 0.104	Ip > -0.113, mean = 0.052
+   plant 18, Ie > 0.101, mean = 0.104	Ip > -0.069, mean = 0.041
+   plant 19, Ie > 0.101, mean = 0.104	Ip > -0.115, mean = 0.050
+
+These results show that for the two white-flowered plants, the new
+"phenotype model" yields approx. 2.3 nats (i.e. a ten-fold improvement
+in the likelihood, by replacing the 10% "cost" per white flower in
+the mixture model to a single 10% "cost" for the entire plant).
+Note that even the purple-flowered plants yield strong empirical
+information gain, reflecting the fact that a plant is either 
+all-purple or all-white -- not a mixture as predicted by the mixture model.
+The phenotype model has successfully converted all the potential 
+information for these observations into empirical information.
+
+
 
