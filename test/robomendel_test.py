@@ -2,16 +2,6 @@ from darwin import mendel
 from darwin import model
 from scipy import stats
 
-def init():
-    'set up the basic Wh/Pu genetic model'
-    Wh = mendel.RecessiveAllele("Wh", stats.norm(0,1))
-    Pu = mendel.DominantAllele("Pu", stats.norm(10,1))
-    chrWh = mendel.Chromosome([(0.5,Wh)])
-    chrPu = mendel.Chromosome([(0.5,Pu)])
-    plantWh = mendel.DiploidGenome({1:(chrWh,chrWh)})
-    plantPu = mendel.DiploidGenome({1:(chrPu,chrPu)})
-    return plantWh,plantPu
-
 def pheno1_test(modelWh, modelPu):
     pstate = model.LinearState('Pu', modelPu)
     wstate = model.LinearState('Wh', modelWh)

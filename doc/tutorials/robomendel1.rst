@@ -10,7 +10,7 @@ pea flowers, all of them purple.  The poor guy is bored.
 This is because he sees no potential information in his observations.
 Each year he observed 20 plants, each with 100 flowers::
 
-   >>> from data import *
+   >>> from test.robomendel_data import *
    >>> import math, numpy
    >>> from scipy import stats
    >>> obsPu = plantPu.get_phenotypes()[0].rvs(5 * 20 * 100)
