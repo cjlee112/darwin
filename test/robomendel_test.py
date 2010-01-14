@@ -1,6 +1,12 @@
 from darwin import mendel
 from darwin import model
+from darwin import mixture
+from darwin import entropy
 from scipy import stats
+import numpy
+
+def get_mix_model(modelWh, modelPu):
+    return mixture.Mixture(((0.9, modelPu), (0.1, modelWh)))
 
 def pheno1_test(modelWh, modelPu):
     pstate = model.LinearState('Pu', modelPu)
@@ -23,5 +29,18 @@ def pheno1_test(modelWh, modelPu):
     f, b, fsub, bsub, ll = dg.calc_fb(obsDict)
     logPobs = b[model.START]
     llDict = model.posterior_ll(f)
+
+    mixModel = get_mix_model(modelWh, modelPu)
+
+    for plant in range(20):
+        obs = obsDict[(0,plant,0)]
+        Le = entropy.LogPVector(numpy.array(llDict[(0,plant,0)]))
+        LeMix = entropy.sample_Le(obs, mixModel)
+        Ie = Le - LeMix
+        He = entropy.box_entropy(obs, 7)
+        Ip = -Le - He
+        print 'plant %d, Ie > %1.3f, mean = %1.3f\tIp > %1.3f, mean = %1.3f' \
+              % (plant, Ie.get_bound(), Ie.mean, Ip.get_bound(), Ip.mean)
+        
     return llDict
 

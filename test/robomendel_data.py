@@ -1,5 +1,5 @@
 from scipy import stats
-import mendel
+from darwin import mendel
 
 Wh = mendel.RecessiveAllele("Wh", stats.norm(0,1))
 Pu = mendel.DominantAllele("Pu", stats.norm(10,1))
