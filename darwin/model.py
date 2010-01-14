@@ -231,6 +231,13 @@ class BasicHMM(DependencyGraph):
                                            'STOP':{0:{0:term}}},
                                         'START':{0:{0:{0:prior}}}})
 
+class TrivialMap(object):
+    'maps any and all keys to the specified value'
+    def __init__(self, v):
+        self.v = v
+    def __getitem__(self, k):
+        return self.v
+
 class StateGraph(UserDict.DictMixin):
     '''Provides graph interface to nodes in HMM '''
     def __init__(self, graph):
@@ -313,13 +320,21 @@ class LinearState(State):
             raise StopIteration # no more observations, so HMM ends here
         return Node(self, None, (obsID,), fromNode.obsDict)
 
-class LinearStateStop(object):
+class LinearStateStop(State):
+    def __init__(self):
+        State.__init__(self, 'STOP', None)
     def __call__(self, fromNode):
         '''Only return STOP node if at the end of the obs set '''
         if fromNode.obsDict is not None \
                and fromNode.var.obsTuple[0] + 1 >= len(fromNode.obsDict):
             return STOP # exhausted obs, so transition to STOP
         raise StopIteration # no path to STOP
+
+class StopState(State):
+    def __init__(self):
+        State.__init__(self, 'STOP', None)
+    def __call__(self, fromNode):
+        return STOP
         
 class EmissionDict(dict):
     'state interface with arbitrary obs --> probability mapping'

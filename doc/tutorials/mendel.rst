@@ -8,7 +8,7 @@ Modeling Mendel's Purple vs. White Alleles
 We simply define our alleles by associating with each a probability
 distribution for our observable, in this case "flower color"::
 
-   >>> import mendel
+   >>> from darwin import mendel
    >>> from scipy import stats
    >>> Wh = mendel.RecessiveAllele("Wh", stats.norm(0,1))
    >>> Pu = mendel.DominantAllele("Pu", stats.norm(10,1))

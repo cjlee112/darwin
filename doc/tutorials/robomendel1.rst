@@ -26,6 +26,7 @@ Next he calculates the empirical entropy of the observations,
 and the empirical log-likelihood::
 
    >>> obsNew = plantPu.get_phenotypes()[0].rvs(20 * 100)
+   >>> from darwin import entropy
    >>> He = entropy.box_entropy(obsNew, 7)
    >>> Le = entropy.sample_Le(obsNew, modelPu)
 
@@ -200,10 +201,8 @@ To model this, we first create objects representing the two possible
 states of this hidden variable::
 
    >>> from darwin.model import *
-   >>> emitPu = modelPu.get_phenotypes()[0]
-   >>> emitWh = modelWh.get_phenotypes()[0]
-   >>> pstate = LinearState('Pu', emitPu)
-   >>> wstate = LinearState('Wh', emitWh)
+   >>> pstate = LinearState('Pu', modelPu)
+   >>> wstate = LinearState('Wh', modelWh)
 
 We specify the prior probability for each state as a transition probability
 from the initial 'START' state::
@@ -213,7 +212,7 @@ from the initial 'START' state::
 We also need to specify that each state can "exit" to the terminal 'STOP'
 state::
 
-   >>> stop = LinearStateStop()
+   >>> stop = StopState()
    >>> term = StateGraph({pstate:{stop:1.}, wstate:{stop:1.}})
 
 Next we create independent phenotype variables for each of the 20 plants
@@ -228,7 +227,9 @@ We assemble these into the final *dependency graph* that shows the structure
 of these variables; here we merely draw them as a star-topology from the 
 initial 'START' state::
 
-   >>> dg = DependencyGraph({'START':{0:{0:d}}})
+   >>> dg = DependencyGraph({'START':{0:{0:d}},
+   ...                       0:{'STOP':TrivialMap({0:term})}})
+   ...
 
 Finally, we package each plant's observations in an *observation dictionary*
 keyed by the possible plant IDs::
