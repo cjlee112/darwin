@@ -236,10 +236,10 @@ keyed by the possible plant IDs::
 
    >>> obsDict = {}
    >>> for plant in range(2): # two white plants
-   >>>    obsDict[(0,plant,0)] = emitWh.rvs(100)
+   >>>    obsDict[(0,plant,0)] = modelWh.rvs(100)
    ...
    >>> for plant in range(2, 20): # 18 purple plants
-   >>>    obsDict[(0,plant,0)] = emitPu.rvs(100)
+   >>>    obsDict[(0,plant,0)] = modelPu.rvs(100)
    ...
 
 We now compute the model probabilities using the forward-backward
