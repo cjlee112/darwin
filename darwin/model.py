@@ -172,7 +172,7 @@ class DependencyGraph(UserDict.DictMixin):
             node = dest
         return s,obs
 
-    def p_backwards(self, obsDict, node=START):
+    def p_backwards(self, obsDict, node=START, logPmin=neginf):
         '''backwards probability algorithm
         Begins at START by default.
         Returns backwards probabilities.'''
@@ -181,10 +181,10 @@ class DependencyGraph(UserDict.DictMixin):
         node.obsDict = obsDict
         g = {}
         logPobsDict = {node:node.log_p_obs()}
-        self.p_backwards_sub(node, b, g, logPobsDict, bsub)
+        self.p_backwards_sub(node, b, g, logPobsDict, bsub, logPmin)
         return b,g,logPobsDict,bsub
         
-    def p_backwards_sub(self, node, b, g, logPobsDict, bsub):
+    def p_backwards_sub(self, node, b, g, logPobsDict, bsub, logPmin):
         '''Computes b[node] = log p(X_p | node), where X_p means all
         obs emitted by descendants of this node Theta_p.
 
@@ -194,19 +194,21 @@ class DependencyGraph(UserDict.DictMixin):
         for sg in self[node]: # multiple dependencies multiply...
             logP = []
             for dest,edge in sg.items(): # multiple states sum...
-                g.setdefault(dest, {})[node] = edge # save reverse graph
                 try:
                     logPobs = logPobsDict[dest]
                 except KeyError:
-                    logPobsDict[dest] = logPobs = dest.log_p_obs()
-                if dest.var.ruleID == 'STOP':
-                    logP.append(safe_log(edge))
-                    b.setdefault(dest, 0.)
-                    continue
+                    if dest.var.ruleID == 'STOP': # terminate the path
+                        b[dest] = logPobsDict[dest] = logPobs = 0.
+                    else:
+                        logPobsDict[dest] = logPobs = dest.log_p_obs()
+                if logPobs <= logPmin:
+                    continue # truncate: do not recurse to dest
+                g.setdefault(dest, {})[node] = edge # save reverse graph
                 try:
                     logP.append(b[dest] + safe_log(edge) + logPobs)
                 except KeyError:  # need to compute this value
-                    self.p_backwards_sub(dest, b, g, logPobsDict, bsub)
+                    self.p_backwards_sub(dest, b, g, logPobsDict, bsub,
+                                         logPmin)
                     logP.append(b[dest] + safe_log(edge) + logPobs)
             if logP: # non-empty list
                 lsum = log_sum_list(logP)
