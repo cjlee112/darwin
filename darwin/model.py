@@ -178,13 +178,16 @@ class DependencyGraph(UserDict.DictMixin):
         Returns backwards probabilities.'''
         b = {}
         bsub = {} # backward prob graph for each child of a given node
+        bLeft = {} # backward prob for siblings to our left
         node.obsDict = obsDict
         g = {}
         logPobsDict = {node:node.log_p_obs()}
-        self.p_backwards_sub(node, b, g, logPobsDict, bsub, logPmin)
+        self.p_backwards_sub(node, b, g, logPobsDict, bsub, bLeft, logPmin)
+        for node,l in bLeft.items():
+            bLeft[node] = log_sum_list(l)
         return b,g,logPobsDict,bsub
         
-    def p_backwards_sub(self, node, b, g, logPobsDict, bsub, logPmin):
+    def p_backwards_sub(self, node, b, g, logPobsDict, bsub, bLeft, logPmin):
         '''Computes b[node] = log p(X_p | node), where X_p means all
         obs emitted by descendants of this node Theta_p.
 
@@ -208,11 +211,13 @@ class DependencyGraph(UserDict.DictMixin):
                     logP.append(b[dest] + safe_log(edge) + logPobs)
                 except KeyError:  # need to compute this value
                     self.p_backwards_sub(dest, b, g, logPobsDict, bsub,
-                                         logPmin)
+                                         bLeft, logPmin)
                     logP.append(b[dest] + safe_log(edge) + logPobs)
             if logP: # non-empty list
                 lsum = log_sum_list(logP)
                 bsub.setdefault(node, {})[dest.var] = lsum
+                if logProd < 0.:
+                    bLeft.setdefault(dest, []).append(logProd)
                 logProd += lsum
         b[node] = logProd
 
