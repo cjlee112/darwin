@@ -90,7 +90,7 @@ We first construct our HMM as a composite of these three state graphs::
 
 We use its simulate_seq() method to generate a sequence of states
 and obserations via simulation::
-
+    >>> n = 10
     >>> s,obs = dg.simulate_seq(n)
 
 Prior to performing Bayesian inference on this set of observations, 
