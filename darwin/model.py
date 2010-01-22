@@ -29,25 +29,6 @@ def safe_log(x):
 
 # basic classes for dependency - observation - state graphs
 
-class Variable(object):
-    '''Represents label of a variable instance in
-    a dependency-observation graph'''
-    def __init__(self, ruleID, varID, obsTuple):
-        self.ruleID = ruleID
-        self.obsTuple = obsTuple
-        self.varID = varID
-
-    def __hash__(self):
-        return hash((self.ruleID,self.varID,self.obsTuple))
-
-    def __cmp__(self, other):
-        try:
-            return cmp((self.ruleID,self.varID,self.obsTuple),
-                       (other.ruleID,other.varID,other.obsTuple))
-        except AttributeError:
-            return cmp(id(self), id(other))
-        
-
 class Node(object):
     '''Node class for compiled state-instance graphs.  Note that
     multiple Node instances with the same state, ruleID, obsTuple will
@@ -55,19 +36,21 @@ class Node(object):
     at the same node even though they construct different object
     instances -- the different instances will compare as equal when
     looking them up in the forward - backward dictionaries.'''
-    def __init__(self, state, ruleID=None, obsTuple=(), obsDict=None,
-                 varID=0):
+    def __init__(self, state, var):
         self.state = state
-        self.obsDict = obsDict
-        self.var = Variable(ruleID, varID, obsTuple)
+        self.var = var
 
-    def set_label(self, ruleID, varID):
-        self.var.ruleID = ruleID
-        self.var.varID = varID
+    def get_children(self):
+        '''Get descendants in form {label:{node:pTransition}} '''
+        results = None
+        for varLabel, stateGraph in self.var.get_children().items():
+            d = stateGraph(self, varLabel)
+            try:
+                results.update(d)
+            except AttributeError:
+                results = d
+        return results
 
-    def get_obs_label(self, obsID):
-        return (self.var.ruleID, self.var.varID, obsID)
-        
     def __hash__(self):
         return hash((self.state,self.var))
 
@@ -79,8 +62,7 @@ class Node(object):
             return cmp(id(self), id(other))
 
     def __repr__(self):
-        return '<%s: %s %s>' % (repr(self.state), str(self.var.obsTuple),
-                                  str((self.var.ruleID,self.var.varID)))
+        return '<%s: %s>' % (repr(self.state), repr(self.var))
 
     def get_ll_dict(self):
         try:
@@ -97,89 +79,161 @@ class Node(object):
         return logPobs
 
 
-START = Node('START', 'START')
-STOP = Node('STOP', 'STOP')
+class StartNode(Node):
+    def __init__(self, graph, obsGraphs):
+        obsTuple = tuple([g.get_start() for g in obsGraphs])
+        label = graph.get_start(obsTuple=obsTuple)
+        Node.__init__(self, 'START', label)
 
-class ObservationDict(dict):
+class StopNode(Node):
+    def __init__(self, graph):
+        Node.__init__(self, 'STOP', NodeLabel(graph, 'STOP', None))
+
+class Label(object):
+    '''Reference to a specific vertex in a graph'''
+    def __init__(self, graph, label, values=None):
+        self.graph = graph
+        self.label = label
+        if values is not None:
+            self.values = values
+
+    def __repr__(self):
+        return str(self.label)
+    def __hash__(self):
+        return hash((self.graph, self.label))
+    def __cmp__(self, other):
+        try:
+            return cmp((self.graph, self.label), (other.graph, other.label))
+        except AttributeError:
+            return cmp(id(self), id(other))
+    def get_children(self, **kwargs):
+        '''Get child,obs pairs for child nodes of this node '''
+        return self.graph.__getitem__(self, **kwargs)
+    def __len__(self):
+        'Get count of descendants'
+        return len(self.graph[self])
+
+class ObsLabel(Label):
     pass
 
-def obs_sequence(ruleID, seq, varID=0):
-    'transform seq into a ObservationDict'
-    d = ObservationDict()
-    for i,s in enumerate(seq):
-        d[ruleID,varID,i] = (s,)
-    return d
+class NodeLabel(Label):
+    def __init__(self, graph, label, obsTuple):
+        self.graph = graph
+        self.label = label
+        self.obsTuple = obsTuple
+    def __hash__(self):
+        return hash((self.graph, self.label, self.obsTuple))
+    def __cmp__(self, other):
+        try:
+            return cmp((self.graph, self.label, self.obsTuple),
+                       (other.graph, other.label, other.obsTuple))
+        except AttributeError:
+            return cmp(id(self), id(other))
+    def __repr__(self):
+        return str((self.label, self.obsTuple))
+    def get_obs_label(self, obsID):
+        return self.__class__(self.graph, self.label, (obsID,))
 
-    
+
+class ObsSequence(object):
+    '''simple linear obs graph '''
+    def __init__(self, seq):
+        self.seq = seq
+
+    def __getitem__(self, node, **kwargs):
+        try:
+            if node.graph is not self:
+                raise AttributeError
+            i = node.label + 1
+        except AttributeError:
+            raise KeyError('node not in this graph')
+        if i < len(self.seq):
+            return {ObsLabel(self, i, (self.seq[i],)):self.seq[i]}
+        else: # reached end of sequence
+            return {}
+
+    def get_start(self):
+        return ObsLabel(self, -1)
+
+    def __hash__(self):
+        return id(self)
+
+class ObsSeqSimulator(ObsSequence):
+    def __getitem__(self, node, fromNode=None, targetLabel=None, state=None):
+        try:
+            obs = state.emission.rvs(1)
+            return {ObsLabel(self, node.label + 1, obs):obs}
+        except AttributeError:
+            return {ObsLabel(self, node.label + 1, None):None}
+
+class LabelGraph(object):
+    '''Graph '''
+    def __init__(self, graph):
+        self.graph = graph
+
+    def __getitem__(self, node):
+        try:
+            if node.graph is not self:
+                raise KeyError
+            d = self.graph[node.label]
+        except (KeyError, AttributeError):
+            raise KeyError('node not in this graph')
+        results = {}
+        for label,sg in d.items():
+            var = NodeLabel(self, label, None)
+            results[var] = sg
+        return results
+
+    def get_start(self, klass=NodeLabel, **kwargs):
+        return klass(self, 'START', **kwargs)
+
+    def __hash__(self):
+        return id(self)
+
+class TrivialGraph(LabelGraph):
+    'Graph containing single node with self-edge'
+    def __init__(self, var, stateGraph):
+        LabelGraph.__init__(self, {var.label:{var.label:stateGraph}})
 
 class DependencyGraph(UserDict.DictMixin):
-    def __init__(self, graph, obsDict=None):
+    def __init__(self, graph):
         '''graph represents the dependency structure; it must
         be a dictionary whose keys are dependency group IDs, and
         associated values are lists of state graphs that nodes in
         this dependency group participate in.'''
         self.graph = graph
-        self.obsDict = obsDict
-
-    def __getitem__(self, k):
-        '''Return results from state graphs that this node participates in'''
-        d = {} # groups nodes with same ruleID,varID together
-        for ruleID,varGraph in self.graph[k.var.ruleID].items():
-            for varID,stateGraph in varGraph[k.var.varID].items():
-                for node,edge in stateGraph[k].items():
-                    node.set_label(ruleID, varID)
-                    d.setdefault((ruleID,varID), {})[node] = edge
-        return d.values() # list of state graphs
-
-    def __invert__(self): # REWRITE THIS for new ruleID:varID:sg structure!!
-        'generate inverse dependency graph'
-        try:
-            return self._inverse
-        except AttributeError:
-            pass
-        inv = {}
-        for k,v in self.graph.items():
-            for sg in v:
-                sgInv = ~sg
-                sgInv.ruleID = k
-                inv.setdefault(sg.ruleID, []).append(sgInv)
-        self._inverse = self.__class__(inv, self.obsDict)
-        self._inverse._inverse = self
-        return self._inverse
 
     def simulate_seq(self, n):
-        'simular markov chain of length n'
-        node = START
+        'simulate markov chain of length n'
+        node = StartNode(self.graph, (ObsSeqSimulator(None),))
         s = []
         obs = []
         for i in range(n):
             p = random.random()
             total = 0.
-            for sg in self[node]:
+            for label,sg in node.get_children().items():
                 for dest,edge in sg.items(): # choose next state
+                    if dest.state == 'STOP':
+                        continue
                     total += edge
                     if p <= total:
-                        break;
+                        break
                 break # this algorithm can only handle linear chain ...
             s.append(dest)
-            p = random.random()
-            total = 0.
-            for o,edge in dest.state.emission.items(): # generate observation
-                total += edge
-                if p <= total:
-                    break;
-            obs.append(o)
+            obs.append(dest.var.obsTuple[0].values[0])
             node = dest
         return s,obs
 
-    def p_backwards(self, obsDict, node=START, logPmin=neginf):
+    def p_backwards(self, obsGraphs, logPmin=neginf):
         '''backwards probability algorithm
         Begins at START by default.
         Returns backwards probabilities.'''
         b = {}
         bsub = {} # backward prob graph for each child of a given node
         bLeft = {} # backward prob for siblings to our left
-        node.obsDict = obsDict
+        self.start = StartNode(self.graph, obsGraphs)
+        self.stop = StopNode(self.graph)
+        node = self.start
         g = {}
         logPobsDict = {node:node.log_p_obs()}
         self.p_backwards_sub(node, b, g, logPobsDict, bsub, bLeft, logPmin)
@@ -194,13 +248,13 @@ class DependencyGraph(UserDict.DictMixin):
         Also stores bsub[node][r] = log p(X_pr | node), where
         X_pr means all obs emitted by descendants of child r of this node.'''
         logProd = 0.
-        for sg in self[node]: # multiple dependencies multiply...
+        for label,sg in node.get_children().items(): # multiple dependencies multiply...
             logP = []
             for dest,edge in sg.items(): # multiple states sum...
                 try:
                     logPobs = logPobsDict[dest]
                 except KeyError:
-                    if dest.var.ruleID == 'STOP': # terminate the path
+                    if dest.state == 'STOP': # terminate the path
                         b[dest] = logPobsDict[dest] = logPobs = 0.
                     else:
                         logPobsDict[dest] = logPobs = dest.log_p_obs()
@@ -221,11 +275,11 @@ class DependencyGraph(UserDict.DictMixin):
                 logProd += lsum
         b[node] = logProd
 
-    def calc_fb(self, obsDict):
+    def calc_fb(self, obsGraphs, **kwargs):
         '''Returns forward and backward probability matrices for all
         possible states at all positions in the dependency graph'''
-        b,g,logPobsDict,bsub = self.p_backwards(obsDict)
-        f,fsub = p_forwards(g, logPobsDict, b, bsub)
+        b,g,logPobsDict,bsub = self.p_backwards(obsGraphs, **kwargs)
+        f,fsub = p_forwards(g, logPobsDict, b, bsub, self.stop)
         return f, b, fsub, bsub, logPobsDict
 
 class BasicHMM(DependencyGraph):
@@ -233,10 +287,9 @@ class BasicHMM(DependencyGraph):
     given its state graph, priors, and termination edges.  Each of these
     must be specified as a StateGraph whose nodes are states and whose
     edge values are transition probabilities.'''
-    def __init__(self, sg, prior, term):
-        DependencyGraph.__init__(self, {0:{0:{0:{0:sg}},
-                                           'STOP':{0:{0:term}}},
-                                        'START':{0:{0:{0:prior}}}})
+    def __init__(self, sg, prior):
+        vg = LabelGraph({0:{0:sg}, 'START':{0:prior}})
+        DependencyGraph.__init__(self, vg)
 
 class TrivialMap(object):
     'maps any and all keys to the specified value'
@@ -251,18 +304,16 @@ class StateGraph(UserDict.DictMixin):
         '''graph supplies the allowed state-state transitions and probabilities'''
         self.graph = graph
 
-    def __getitem__(self, fromNode):
-        '''return dict of destination nodes & edges for fromNode '''
-        targets = self.graph[fromNode.state]
-        d = {}
-        for dest,edge in targets.items():
-            try: # construct destination node using dest type
-                toNode = dest(fromNode)
-            except StopIteration: # no valid destination from here
-                pass
-            else:
-                d[toNode] = edge
-        return d
+    def __call__(self, fromNode, targetLabel):
+        '''return dict of {label:{node:pTransition}} from fromNode'''
+        results = {}
+        for dest,edge in self.graph[fromNode.state].items():
+            for k,v in dest(fromNode, targetLabel, edge).items():
+                try:
+                    results[k].update(v)
+                except KeyError:
+                    results[k] = v
+        return results
 
     def __invert__(self):
         try:
@@ -282,15 +333,23 @@ class StateGraph(UserDict.DictMixin):
 # __call__() interface allows each state type to control how it
 # "moves" in obs space, e.g. a linear chain state just advances the
 # obsID +1; a pairwise match state could advance both x,y +1... etc.
-# Should raise StopIteration if no valid next node, e.g. if obs
-# are exhausted.  Since we are using a constructor interface,
-# we use StopIteration (rather than a return value like None) to
-# signal "no valid next node".
 
 class State(object):
     def __init__(self, name, emission):
         self.emission = emission
         self.name = name
+
+    def __call__(self, fromNode, targetLabel, edge):
+        '''default move operator just echoes the obs graph branches'''
+        results = {}
+        obsPaths = fromNode.var.obsTuple[0]. \
+                   get_children(fromNode=fromNode, targetLabel=targetLabel,
+                                state=self)
+        for obsLabel in obsPaths:
+            newLabel = targetLabel.get_obs_label(obsLabel)
+            targetNode = Node(self, newLabel)
+            results.setdefault(newLabel, {})[targetNode] = edge
+        return results
 
     def get_ll_dict(self, node):
         '''generate the log-likelihood of observations for node,
@@ -303,9 +362,13 @@ class State(object):
                 return self.emission.pmf(obs)
             except AttributeError:
                 return self.emission.pdf(obs)
-        for obsID in node.var.obsTuple:
-            d[obsID] = [safe_log(p) for p in
-                        get_plist(node.obsDict[node.get_obs_label(obsID)])]
+        for obsLabel in node.var.obsTuple:
+            try:
+                obsList = obsLabel.values
+            except AttributeError: # no obs values here...
+                pass
+            else:
+                d[obsLabel] = [safe_log(p) for p in get_plist(obsList)]
         return d
                 
     def __hash__(self):
@@ -316,51 +379,53 @@ class State(object):
 
 class LinearState(State):
     '''Models a state in a linear chain '''
-    def __call__(self, fromNode):
-        '''Construct next node in HMM after fromNode'''
-        try:
-            obsID = fromNode.var.obsTuple[0] + 1
-        except IndexError: # treat empty list as START: go to 1st obsID
-            obsID = 0
-        if obsID < 0 or (fromNode.obsDict is not None
-                         and obsID >= len(fromNode.obsDict)):
-            raise StopIteration # no more observations, so HMM ends here
-        return Node(self, None, (obsID,), fromNode.obsDict)
-
-class LinearStateStop(State):
-    def __init__(self):
-        State.__init__(self, 'STOP', None)
-    def __call__(self, fromNode):
-        '''Only return STOP node if at the end of the obs set '''
-        if fromNode.obsDict is not None \
-               and fromNode.var.obsTuple[0] + 1 >= len(fromNode.obsDict):
-            return STOP # exhausted obs, so transition to STOP
-        raise StopIteration # no path to STOP
+    pass
 
 class StopState(State):
     def __init__(self):
         State.__init__(self, 'STOP', None)
-    def __call__(self, fromNode):
-        return STOP
+    def __call__(self, fromNode, targetLabel, edge):
+        return {'STOP':{StopNode(targetLabel.graph):edge}}
         
+class LinearStateStop(StopState):
+    def __call__(self, fromNode, targetLabel, edge):
+        '''Only return STOP node if at the end of the obs set '''
+        if not State.__call__(self, fromNode, targetLabel, edge):
+            # exhausted obs, so transition to STOP
+            return StopState.__call__(self, fromNode, targetLabel, edge)
+        else:
+            return {}
+
 class EmissionDict(dict):
     'state interface with arbitrary obs --> probability mapping'
     def pmf(self, obs):
         return [self[o] for o in obs]
     def __hash__(self):
         return id(self)
+    def rvs(self, n):
+        'generate sample of random draws of size n'
+        obs = []
+        for i in range(n):
+            p = random.random()
+            total = 0.
+            for o,edge in self.items(): # generate observation
+                total += edge
+                if p <= total:
+                    obs.append(o)
+                    break
+        return obs
 
-def p_forwards(g, logPobsDict, b, bsub):
+def p_forwards(g, logPobsDict, b, bsub, stop):
     '''g: reverse graph generated by p_backwards()
     Reverse traversal begins at STOP by default.
     Returns forward probabilities'''
     f = {}
     fsub = {}
-    p_forwards_sub(g, logPobsDict, STOP, b, bsub, f, fsub)
+    p_forwards_sub(g, logPobsDict, stop, b, bsub, f, fsub)
     return f,fsub
     
 def p_forwards_sub(g, logPobsDict, dest, b, bsub, f, fsub):
-    if dest.var.ruleID == 'START':
+    if dest.state == 'START':
         f[dest] = 0.
         fsub[dest] = 0.
         return f
@@ -388,7 +453,7 @@ def posterior_ll(f):
             for logP in ll:
                 f_ti += logP
                 llObs.append(f_ti)
-            d.setdefault(node.get_obs_label(obsID), []).append(llObs)
+            d.setdefault(node.var.get_obs_label(obsID), []).append(llObs)
     llDict = {}
     for obsLabel,ll in d.items():
         nobs = len(ll[0]) # actually this is #obs + 1
