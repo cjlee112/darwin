@@ -13,20 +13,19 @@ def odc_test(p6=.5, n=100):
     sg = StateGraph({F:{F:0.95, L:0.05, stop:1.},
                      L:{F:0.1, L:0.9, stop:1.}})
     prior = StateGraph({'START':{F:2./3., L:1./3.}})
-    dg = BasicHMM(sg, prior)
+    hmm = Model(LabelGraph({0:{0:sg}, 'START':{0:prior}}))
 
-    s,obs = dg.simulate_seq(n)
+    s,obs = hmm.simulate_seq(n)
     obsGraph = ObsSequence(obs)
-    f, b, fsub, bsub, ll = dg.calc_fb((obsGraph,))
-    logPobs = b[dg.start]
-    llDict = posterior_ll(f)
+    logPobs = hmm.calc_fb((obsGraph,))
+    llDict = hmm.posterior_ll()
     for i in range(n): # print posteriors
-        obsLabel = ObsLabel(obsGraph, i)
-        nodeLabel = NodeLabel(dg.graph, 0, (obsLabel,))
+        obsLabel = obsGraph.get_label(i)
+        nodeLabel = hmm.graph.get_label(0, (obsLabel,))
         nodeF = Node(F, nodeLabel)
         nodeL = Node(L, nodeLabel)
         print '%s:%0.3f\t%s:%0.3f\tTRUE:%s,%d,%0.3f' % \
-              (nodeF, exp(fsub[nodeF] + b[nodeF] - logPobs),
-               nodeL, exp(fsub[nodeL] + b[nodeL] - logPobs),
-               s[i], obs[i], exp(llDict[nodeF.var.get_obs_label(obsLabel)][0]))
-    return dg
+              (nodeF, hmm.posterior(nodeF),
+               nodeL, hmm.posterior(nodeL),
+               s[i], obs[i], exp(llDict[nodeF.var][0]))
+    return hmm

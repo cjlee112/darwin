@@ -134,8 +134,17 @@ class NodeLabel(Label):
     def get_obs_label(self, obsID):
         return self.__class__(self.graph, self.label, (obsID,))
 
+class LabelGraphBase(object):
+    labelClass = Label
 
-class ObsSequence(object):
+    def get_label(self, label, *args, **kwargs):
+        return self.labelClass(self, label, *args, **kwargs)
+
+    def __hash__(self):
+        return id(self)
+
+
+class ObsSequence(LabelGraphBase):
     '''simple linear obs graph '''
     def __init__(self, seq):
         self.seq = seq
@@ -155,9 +164,6 @@ class ObsSequence(object):
     def get_start(self):
         return ObsLabel(self, -1)
 
-    def __hash__(self):
-        return id(self)
-
 class ObsSeqSimulator(ObsSequence):
     def __getitem__(self, node, fromNode=None, targetLabel=None, state=None):
         try:
@@ -166,8 +172,9 @@ class ObsSeqSimulator(ObsSequence):
         except AttributeError:
             return {ObsLabel(self, node.label + 1, None):None}
 
-class LabelGraph(object):
+class LabelGraph(LabelGraphBase):
     '''Graph '''
+    labelClass = NodeLabel
     def __init__(self, graph):
         self.graph = graph
 
@@ -187,25 +194,9 @@ class LabelGraph(object):
     def get_start(self, klass=NodeLabel, **kwargs):
         return klass(self, 'START', **kwargs)
 
-    def __hash__(self):
-        return id(self)
-
-class TrivialGraph(LabelGraph):
-    'Graph containing single node with self-edge'
-    def __init__(self, var, stateGraph):
-        LabelGraph.__init__(self, {var.label:{var.label:stateGraph}})
-
-class DependencyGraph(UserDict.DictMixin):
-    def __init__(self, graph):
-        '''graph represents the dependency structure; it must
-        be a dictionary whose keys are dependency group IDs, and
-        associated values are lists of state graphs that nodes in
-        this dependency group participate in.'''
-        self.graph = graph
-
     def simulate_seq(self, n):
         'simulate markov chain of length n'
-        node = StartNode(self.graph, (ObsSeqSimulator(None),))
+        node = StartNode(self, (ObsSeqSimulator(None),))
         s = []
         obs = []
         for i in range(n):
@@ -224,72 +215,64 @@ class DependencyGraph(UserDict.DictMixin):
             node = dest
         return s,obs
 
-    def p_backwards(self, obsGraphs, logPmin=neginf):
-        '''backwards probability algorithm
-        Begins at START by default.
-        Returns backwards probabilities.'''
-        b = {}
-        bsub = {} # backward prob graph for each child of a given node
-        bLeft = {} # backward prob for siblings to our left
-        self.start = StartNode(self.graph, obsGraphs)
-        self.stop = StopNode(self.graph)
-        node = self.start
-        g = {}
-        logPobsDict = {node:node.log_p_obs()}
-        self.p_backwards_sub(node, b, g, logPobsDict, bsub, bLeft, logPmin)
-        for node,l in bLeft.items():
-            bLeft[node] = log_sum_list(l)
-        return b,g,logPobsDict,bsub
-        
-    def p_backwards_sub(self, node, b, g, logPobsDict, bsub, bLeft, logPmin):
-        '''Computes b[node] = log p(X_p | node), where X_p means all
-        obs emitted by descendants of this node Theta_p.
+class TrivialGraph(LabelGraph):
+    'Graph containing single node with self-edge'
+    def __init__(self, var, stateGraph):
+        LabelGraph.__init__(self, {var.label:{var.label:stateGraph}})
 
-        Also stores bsub[node][r] = log p(X_pr | node), where
-        X_pr means all obs emitted by descendants of child r of this node.'''
-        logProd = 0.
-        for label,sg in node.get_children().items(): # multiple dependencies multiply...
-            logP = []
-            for dest,edge in sg.items(): # multiple states sum...
-                try:
-                    logPobs = logPobsDict[dest]
-                except KeyError:
-                    if dest.state == 'STOP': # terminate the path
-                        b[dest] = logPobsDict[dest] = logPobs = 0.
-                    else:
-                        logPobsDict[dest] = logPobs = dest.log_p_obs()
-                if logPobs <= logPmin:
-                    continue # truncate: do not recurse to dest
-                g.setdefault(dest, {})[node] = edge # save reverse graph
-                try:
-                    logP.append(b[dest] + safe_log(edge) + logPobs)
-                except KeyError:  # need to compute this value
-                    self.p_backwards_sub(dest, b, g, logPobsDict, bsub,
-                                         bLeft, logPmin)
-                    logP.append(b[dest] + safe_log(edge) + logPobs)
-            if logP: # non-empty list
-                lsum = log_sum_list(logP)
-                bsub.setdefault(node, {})[dest.var] = lsum
-                if logProd < 0.:
-                    bLeft.setdefault(dest, []).append(logProd)
-                logProd += lsum
-        b[node] = logProd
+class Model(object):
+    def __init__(self, graph):
+        '''graph represents the dependency structure; it must
+        be a dictionary whose keys are dependency group IDs, and
+        associated values are lists of state graphs that nodes in
+        this dependency group participate in.'''
+        self.graph = graph
+
+    def simulate_seq(self, n):
+        'simulate markov chain of length n'
+        return self.graph.simulate_seq(n)
+
+    def clear(self):
+        def del_if_found(attr):
+            try:
+                delattr(self, attr)
+            except AttributeError:
+                pass
+        for attr in ('b', 'bsub', 'f', 'fsub', 'logPobsDict', 'g', 'start',
+                     'stop', 'bLeft'):
+            del_if_found(attr)
 
     def calc_fb(self, obsGraphs, **kwargs):
         '''Returns forward and backward probability matrices for all
         possible states at all positions in the dependency graph'''
-        b,g,logPobsDict,bsub = self.p_backwards(obsGraphs, **kwargs)
-        f,fsub = p_forwards(g, logPobsDict, b, bsub, self.stop)
-        return f, b, fsub, bsub, logPobsDict
+        self.clear()
+        self.start = StartNode(self.graph, obsGraphs)
+        self.stop = StopNode(self.graph)
+        self.b, self.bsub, self.bLeft, self.g, self.logPobsDict, \
+                self.logPobs = p_backwards(self.start, obsGraphs, **kwargs)
+        self.f,self.fsub = p_forwards(self.g, self.logPobsDict, self.b,
+                                      self.bsub, self.stop)
+        return self.logPobs
 
-class BasicHMM(DependencyGraph):
+    def posterior(self, node, asLog=False):
+        'get posterior probability for the specified node'
+        logP = self.fsub[node] + self.b[node] - self.logPobs
+        if asLog:
+            return logP
+        else:
+            return exp(logP)
+
+    def posterior_ll(self):
+        return posterior_ll(self.f)
+
+class BasicHMM(Model):
     '''Convenience subclass for creating a simple linear-traversal HMM
     given its state graph, priors, and termination edges.  Each of these
     must be specified as a StateGraph whose nodes are states and whose
     edge values are transition probabilities.'''
     def __init__(self, sg, prior):
         vg = LabelGraph({0:{0:sg}, 'START':{0:prior}})
-        DependencyGraph.__init__(self, vg)
+        Model.__init__(self, vg)
 
 class TrivialMap(object):
     'maps any and all keys to the specified value'
@@ -414,6 +397,53 @@ class EmissionDict(dict):
                     obs.append(o)
                     break
         return obs
+
+def p_backwards(start, obsGraphs, logPmin=neginf):
+    '''backwards probability algorithm
+    Returns backwards probabilities.'''
+    b = {}
+    bsub = {} # backward prob graph for each child of a given node
+    bLeft = {} # backward prob for siblings to our left
+    g = {}
+    logPobsDict = {start:start.log_p_obs()}
+    p_backwards_sub(start, b, g, logPobsDict, bsub, bLeft, logPmin)
+    for node,l in bLeft.items():
+        bLeft[node] = log_sum_list(l)
+    return b, bsub, bLeft, g, logPobsDict, b[start]
+        
+def p_backwards_sub(node, b, g, logPobsDict, bsub, bLeft, logPmin):
+    '''Computes b[node] = log p(X_p | node), where X_p means all
+    obs emitted by descendants of this node Theta_p.
+
+    Also stores bsub[node][r] = log p(X_pr | node), where
+    X_pr means all obs emitted by descendants of child r of this node.'''
+    logProd = 0.
+    for label,sg in node.get_children().items(): # multiple dependencies multiply...
+        logP = []
+        for dest,edge in sg.items(): # multiple states sum...
+            try:
+                logPobs = logPobsDict[dest]
+            except KeyError:
+                if dest.state == 'STOP': # terminate the path
+                    b[dest] = logPobsDict[dest] = logPobs = 0.
+                else:
+                    logPobsDict[dest] = logPobs = dest.log_p_obs()
+            if logPobs <= logPmin:
+                continue # truncate: do not recurse to dest
+            g.setdefault(dest, {})[node] = edge # save reverse graph
+            try:
+                logP.append(b[dest] + safe_log(edge) + logPobs)
+            except KeyError:  # need to compute this value
+                p_backwards_sub(dest, b, g, logPobsDict, bsub, bLeft,
+                                logPmin)
+                logP.append(b[dest] + safe_log(edge) + logPobs)
+        if logP: # non-empty list
+            lsum = log_sum_list(logP)
+            bsub.setdefault(node, {})[dest.var] = lsum
+            if logProd < 0.:
+                bLeft.setdefault(dest, []).append(logProd)
+            logProd += lsum
+    b[node] = logProd
 
 def p_forwards(g, logPobsDict, b, bsub, stop):
     '''g: reverse graph generated by p_backwards()
