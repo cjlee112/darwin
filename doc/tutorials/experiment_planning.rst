@@ -75,4 +75,28 @@ What's a robotic scientist to do!? Robomendel knows that in some cases infertile
 
 Not only are the seeds viable, over 20% of the plants have white flowers and nearly 80% have purple flowers! Repeating the experiment, RoboMendel finds that on average 25% of the plants have white flowers.
 
-RoboMendel's latest experiment deals a decisive blow to the different species model, but the pattern of offspring does not fit the bio-object model RoboMendel has been using for his pea plants.
+RoboMendel's latest experiment deals a decisive blow to the different species model, but the pattern of offspring does not fit the bio-object model RoboMendel has been using for his pea plants. RoboMendel can construct a Markov model for his observations, with two states Pu and Wh and transition probabilities Pr(Wh|Pu) = \lambda and Pr(Pu|Pu) = 1 - \lambda . Based on past observations, Robomendel expects 0.25 as the value for lambda.
+
+An assumption underlying this model is that \lambda is equal for all individuals. To test this hypothesis, RoboMendel must track the progeny of each parent rather than performing population wide statistics. First he identifies all the purple-flowered plants from the hybrid cross population.
+
+    >>> purple_plants = [x for x in hybrid_progeny if determine_color(x) == "purple"]
+
+For each purple plant, RoboMendel can cross it with a random sample of other purple plants and examine the progeny.
+
+    >>> from darwin.robomendel import multiset, determine_color
+    >>> progeny_counts = list()
+    >>> for i in range(0, len(purple_plants)):
+    ...     progeny = [purple_plants[i] * random.choice(purple_plants) for j in range(0, 20)]
+    ...     progeny_colors = multiset([determine_color(x) for x in progeny])
+            if 'white' not in progeny_colors:
+                progeny_colors['white'] = 0
+    ...     progeny_counts.append(progeny_colors)
+
+Now Robomendel can obtain a simple estimate of \lambda for each plant:
+
+>>> for counts in progeny_counts:
+...     print float(counts['white']) / float(counts['white'] + counts['purple']),
+...
+0.05 0.0 0.1 0.0 0.0 0.2 0.3 0.15 0.15 0.3 0.2 0.15 0.05 0.1 0.15 0.2 0.4 0.1 0.15 0.0 0.0 0.0 0.2 0.0 0.2 0.0 0.0 0.1 0.1 0.25 0.2 0.15 0.35 0.0 0.0 0.15 0.25 0.0 0.3 0.1 0.05 0.0 0.05 0.05 0.0 0.15 0.25 0.0 0.3 0.0 0.3 0.0 0.2 0.35 0.15 0.1 0.3 0.25 0.2 0.25 0.1 0.0 0.15 0.0 0.2 0.25 0.25 0.25 0.05 0.2 0.0 0.0 0.0 0.2 0.0 0.15 0.0
+
+It certainly seems that \lambda is not equal to 0.25 for all plants!
