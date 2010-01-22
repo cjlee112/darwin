@@ -176,9 +176,15 @@ class LabelGraph(LabelGraphBase):
     '''Graph '''
     labelClass = NodeLabel
     def __init__(self, graph):
+        '''graph should be dict of {sourceLabel:{destLabel:stateGraph}}
+        edges.  destLabel can be a NodeLabel object (allowing you to
+        specify a cross-connection to a node in another graph),
+        or simply any Python value, in which case it will be treated
+        as label for creating a NodeLabel bound to this LabelGraph.'''
         self.graph = graph
 
     def __getitem__(self, node):
+        'get dict of {target NodeLabel:stateGraph} pairs'
         try:
             if node.graph is not self:
                 raise KeyError
@@ -187,12 +193,15 @@ class LabelGraph(LabelGraphBase):
             raise KeyError('node not in this graph')
         results = {}
         for label,sg in d.items():
-            var = NodeLabel(self, label, None)
-            results[var] = sg
+            if not isinstance(label, NodeLabel):
+                label = NodeLabel(self, label, None)
+            results[label] = sg
         return results
 
-    def get_start(self, klass=NodeLabel, **kwargs):
-        return klass(self, 'START', **kwargs)
+    def get_start(self, labelClass=None, **kwargs):
+        if labelClass is None:
+            labelClass = self.labelClass
+        return labelClass(self, 'START', **kwargs)
 
     def simulate_seq(self, n):
         'simulate markov chain of length n'
