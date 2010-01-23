@@ -117,7 +117,7 @@ class ObsLabel(Label):
     pass
 
 class NodeLabel(Label):
-    def __init__(self, graph, label, obsTuple):
+    def __init__(self, graph, label, obsTuple=None):
         self.graph = graph
         self.label = label
         self.obsTuple = obsTuple
@@ -134,47 +134,9 @@ class NodeLabel(Label):
     def get_obs_label(self, obsID):
         return self.__class__(self.graph, self.label, (obsID,))
 
-class LabelGraphBase(object):
+class LabelGraph(object):
     labelClass = Label
 
-    def get_label(self, label, *args, **kwargs):
-        return self.labelClass(self, label, *args, **kwargs)
-
-    def __hash__(self):
-        return id(self)
-
-
-class ObsSequence(LabelGraphBase):
-    '''simple linear obs graph '''
-    def __init__(self, seq):
-        self.seq = seq
-
-    def __getitem__(self, node, **kwargs):
-        try:
-            if node.graph is not self:
-                raise AttributeError
-            i = node.label + 1
-        except AttributeError:
-            raise KeyError('node not in this graph')
-        if i < len(self.seq):
-            return {ObsLabel(self, i, (self.seq[i],)):self.seq[i]}
-        else: # reached end of sequence
-            return {}
-
-    def get_start(self):
-        return ObsLabel(self, -1)
-
-class ObsSeqSimulator(ObsSequence):
-    def __getitem__(self, node, fromNode=None, targetLabel=None, state=None):
-        try:
-            obs = state.emission.rvs(1)
-            return {ObsLabel(self, node.label + 1, obs):obs}
-        except AttributeError:
-            return {ObsLabel(self, node.label + 1, None):None}
-
-class LabelGraph(LabelGraphBase):
-    '''Graph '''
-    labelClass = NodeLabel
     def __init__(self, graph):
         '''graph should be dict of {sourceLabel:{destLabel:stateGraph}}
         edges.  destLabel can be a NodeLabel object (allowing you to
@@ -192,16 +154,61 @@ class LabelGraph(LabelGraphBase):
         except (KeyError, AttributeError):
             raise KeyError('node not in this graph')
         results = {}
-        for label,sg in d.items():
-            if not isinstance(label, NodeLabel):
-                label = NodeLabel(self, label, None)
-            results[label] = sg
+        for label,edge in d.items():
+            if not isinstance(label, self.labelClass):
+                label = self.get_target(label, edge)
+            results[label] = edge
         return results
 
-    def get_start(self, labelClass=None, **kwargs):
-        if labelClass is None:
-            labelClass = self.labelClass
-        return labelClass(self, 'START', **kwargs)
+    def get_target(self, label, edge):
+        return self.labelClass(self, label) # target doesn't use edge value
+
+    def get_start(self, **kwargs):
+        'get START node for this graph'
+        return self.get_label('START', **kwargs)
+
+    def get_label(self, label, *args, **kwargs):
+        'construct label object with specified args'
+        return self.labelClass(self, label, *args, **kwargs)
+
+    def __hash__(self):
+        return id(self)
+
+
+class ObsSequence(LabelGraph):
+    '''simple linear obs graph producing integer obs label values'''
+    def __init__(self, seq):
+        self.seq = seq
+
+    def __getitem__(self, node, **kwargs):
+        try:
+            if node.graph is not self:
+                raise AttributeError
+            i = node.label + 1
+        except AttributeError:
+            raise KeyError('node not in this graph')
+        if i < len(self.seq):
+            return {self.get_label(i, (self.seq[i],)):self.seq[i]}
+        else: # reached end of sequence
+            return {}
+
+    def get_start(self):
+        return self.get_label(-1)
+
+class ObsSeqSimulator(ObsSequence):
+    def __getitem__(self, node, fromNode=None, targetLabel=None, state=None):
+        try:
+            obs = state.emission.rvs(1)
+            return {ObsLabel(self, node.label + 1, obs):obs}
+        except AttributeError:
+            return {ObsLabel(self, node.label + 1, None):None}
+
+class NodeGraph(LabelGraph):
+    '''Graph of the form {source:{target:edge}}
+    where source, target are NodeLabel objects, and
+    edge is the state graph specifying the state transitions from source
+    to target.'''
+    labelClass = NodeLabel
 
     def simulate_seq(self, n):
         'simulate markov chain of length n'

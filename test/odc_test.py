@@ -13,7 +13,7 @@ def odc_test(p6=.5, n=100):
     sg = StateGraph({F:{F:0.95, L:0.05, stop:1.},
                      L:{F:0.1, L:0.9, stop:1.}})
     prior = StateGraph({'START':{F:2./3., L:1./3.}})
-    hmm = Model(LabelGraph({'theta':{'theta':sg}, 'START':{'theta':prior}}))
+    hmm = Model(NodeGraph({'theta':{'theta':sg}, 'START':{'theta':prior}}))
 
     s,obs = hmm.simulate_seq(n)
     obsGraph = ObsSequence(obs)
