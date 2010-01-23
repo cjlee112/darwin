@@ -136,7 +136,7 @@ as a dictionary whose keys are all possible hidden state values in
 the HMM):
 
 * **f**: represents the :math:`p(\vec{X}_1^{t-1},\Theta_t=s_i)` for a given
-  hidden state :math:`\Theta_t` to be in state :math:`s_i`.  
+  hidden variable :math:`\Theta_t` to be in state :math:`s_i`.  
 
 * **b**: represents the :math:`p(\vec{X}_{t+1}^n|\Theta_t=s_i)`,
   i.e. all observations emitted by "descendants" of this node.  Since
