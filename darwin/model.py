@@ -175,7 +175,17 @@ class LabelGraph(object):
         return id(self)
 
 
-class ObsSequence(LabelGraph):
+class ObsGraph(LabelGraph):
+    labelClass = ObsLabel
+    def __getitem__(self, node, **kwargs): # extra arguments passed for sim'n
+        return LabelGraph.__getitem__(self, node)
+    
+    def get_target(self, label, edge):
+        return self.labelClass(self, label, edge) # store obs in ObsLabel
+
+
+
+class ObsSequence(ObsGraph):
     '''simple linear obs graph producing integer obs label values'''
     def __init__(self, seq):
         self.seq = seq
