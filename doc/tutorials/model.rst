@@ -185,7 +185,7 @@ Let's just print out all our results::
     ...    print '%s:%0.3f\t%s:%0.3f\tTRUE:%s,%d,%0.3f' % \
     ...          (nodeF, hmm.posterior(nodeF),
     ...           nodeL, hmm.posterior(nodeL),
-    ...           s[i], obs[i], exp(llDict[nodeF.var][0]))
+    ...           s[i], obs[i], exp(llDict[nodeLabel][0]))
     ...
     <F: ('theta', (0,))>:0.931	<L: ('theta', (0,))>:0.069	TRUE:<F: ('theta', (0,))>,1,0.144
     <F: ('theta', (1,))>:0.953	<L: ('theta', (1,))>:0.047	TRUE:<F: ('theta', (1,))>,3,0.150
