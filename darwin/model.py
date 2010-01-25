@@ -424,6 +424,31 @@ class EmissionDict(dict):
                     break
         return obs
 
+
+def compile_graph(g, gRev, node, b, logPobsDict, logPmin):
+    targets = []
+    for label,sg in node.get_children().items(): # multiple dependencies multiply...
+        d = {}
+        for dest,edge in sg.items(): # multiple states sum...
+            try:
+                logPobs = logPobsDict[dest]
+            except KeyError:
+                if dest.state == 'STOP': # terminate the path
+                    b[dest] = logPobsDict[dest] = logPobs = 0.
+                    g[dest] = () # prevent recursion on dest
+                else:
+                    logPobsDict[dest] = logPobs = dest.log_p_obs()
+            if logPobs <= logPmin:
+                continue # truncate: do not recurse to dest
+            gRev.setdefault(dest, {})[node] = edge # save reverse graph
+            d[dest] = edge
+            if dest not in g: # subtree not already compiled, so recurse
+                compile_graph(g, gRev, dest, b, logPobsDict, logPmin)
+        if d: # non-empty set of forward edges
+            targets.append(d)
+    if targets: # non-empty set of forward edges
+        g[node] = targets # save forward graph
+
 def p_backwards(start, obsGraphs, logPmin=neginf):
     '''backwards probability algorithm
     Returns backwards probabilities.'''
@@ -431,11 +456,13 @@ def p_backwards(start, obsGraphs, logPmin=neginf):
     bsub = {} # backward prob graph for each child of a given node
     bLeft = {} # backward prob for siblings to our left
     g = {}
+    gRev = {}
     logPobsDict = {start:start.log_p_obs()}
+    compile_graph(g, gRev, start, b, logPobsDict, logPmin)
     p_backwards_sub(start, b, g, logPobsDict, bsub, bLeft, logPmin)
     for node,l in bLeft.items():
         bLeft[node] = log_sum_list(l)
-    return b, bsub, bLeft, g, logPobsDict, b[start]
+    return b, bsub, bLeft, gRev, logPobsDict, b[start]
         
 def p_backwards_sub(node, b, g, logPobsDict, bsub, bLeft, logPmin):
     '''Computes b[node] = log p(X_p | node), where X_p means all
@@ -444,25 +471,15 @@ def p_backwards_sub(node, b, g, logPobsDict, bsub, bLeft, logPmin):
     Also stores bsub[node][r] = log p(X_pr | node), where
     X_pr means all obs emitted by descendants of child r of this node.'''
     logProd = 0.
-    for label,sg in node.get_children().items(): # multiple dependencies multiply...
+    for target in g[node]: # multiple dependencies multiply...
         logP = []
-        for dest,edge in sg.items(): # multiple states sum...
+        for dest,edge in target.items(): # multiple states sum...
             try:
-                logPobs = logPobsDict[dest]
-            except KeyError:
-                if dest.state == 'STOP': # terminate the path
-                    b[dest] = logPobsDict[dest] = logPobs = 0.
-                else:
-                    logPobsDict[dest] = logPobs = dest.log_p_obs()
-            if logPobs <= logPmin:
-                continue # truncate: do not recurse to dest
-            g.setdefault(dest, {})[node] = edge # save reverse graph
-            try:
-                logP.append(b[dest] + safe_log(edge) + logPobs)
+                logP.append(b[dest] + safe_log(edge) + logPobsDict[dest])
             except KeyError:  # need to compute this value
                 p_backwards_sub(dest, b, g, logPobsDict, bsub, bLeft,
                                 logPmin)
-                logP.append(b[dest] + safe_log(edge) + logPobs)
+                logP.append(b[dest] + safe_log(edge) + logPobsDict[dest])
         if logP: # non-empty list
             lsum = log_sum_list(logP)
             bsub.setdefault(node, {})[dest.var] = lsum
