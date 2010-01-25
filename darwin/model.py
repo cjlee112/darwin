@@ -426,6 +426,18 @@ class EmissionDict(dict):
 
 
 def compile_graph(g, gRev, node, b, logPobsDict, logPmin):
+    '''Generate complete traversal of variable / observation / state graphs
+    and return forward graph in the form {src:[{dest:edge}]} and reverse
+    graph in the form {dest:{src:edge}}.  In the forward form, each
+    source node has multiple subgraphs, one for each independent
+    target variable.
+
+    Populates logPobsDict with the total log probability of the observations
+    at each node.  Also assigns backward probability of 100% to any STOP node
+    to enforce path termination at that point.
+
+    logPmin enforces truncation of the path at low (or zero) probability
+    nodes.'''
     targets = []
     for label,sg in node.get_children().items(): # multiple dependencies multiply...
         d = {}
@@ -446,8 +458,7 @@ def compile_graph(g, gRev, node, b, logPobsDict, logPmin):
                 compile_graph(g, gRev, dest, b, logPobsDict, logPmin)
         if d: # non-empty set of forward edges
             targets.append(d)
-    if targets: # non-empty set of forward edges
-        g[node] = targets # save forward graph
+    g[node] = targets # save forward graph, even if empty
 
 def p_backwards(start, obsGraphs, logPmin=neginf):
     '''backwards probability algorithm
