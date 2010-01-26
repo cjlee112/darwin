@@ -215,43 +215,38 @@ state::
    >>> stop = StopState()
    >>> term = StateGraph({pstate:{stop:1.}, wstate:{stop:1.}})
 
-Next we create independent phenotype variables for each of the 20 plants
-we are modeling::
-
-   >>> d = {}
-   >>> for plant in range(20):
-   ...    d[plant] = prior
-   ...
-
-We assemble these into the final *dependency graph* that shows the structure
+We assemble these into a simple model graph that shows the structure
 of these variables; here we merely draw them as a star-topology from the 
-initial 'START' state::
+initial 'START' state.  We name our phenotype variable `chi`::
 
-   >>> dg = DependencyGraph({'START':{0:{0:d}},
-   ...                       0:{'STOP':TrivialMap({0:term})}})
+   >>> dg = model.Model(model.NodeGraph({'START':{'chi':prior},
+   ...                                   'chi':{'chi':term}}))
    ...
 
-Finally, we package each plant's observations in an *observation dictionary*
+Finally, we package each plant's observations in an *observation graph*
 keyed by the possible plant IDs::
 
-   >>> obsDict = {}
+   >>> d = {}
    >>> for plant in range(2): # two white plants
-   >>>    obsDict[(0,plant,0)] = modelWh.rvs(100)
+   >>>    d[plant] = modelWh.rvs(100)
    ...
    >>> for plant in range(2, 20): # 18 purple plants
-   >>>    obsDict[(0,plant,0)] = modelPu.rvs(100)
+   >>>    d[plant] = modelPu.rvs(100)
    ...
+   >>> obsGraph = model.ObsGraph({'START':d})
+
+Note that this creates a start topology of 20 independent
+observation groups, each connected directly to the START node.
 
 We now compute the model probabilities using the forward-backward
 algorithm::
 
-   >>> f, b, fsub, bsub, ll = dg.calc_fb(obsDict)
-   >>> logPobs = b[START]
+   >>> logPobs = dg.calc_fb((obsGraph,))
 
 This gives us the total log-probability of the entire set of observations.
 We can also compute the posterior likelihood of each of the observations::
 
-   >>> llDict = posterior_ll(f)
+   >>> llDict = dg.posterior_ll()
 
 This analyzes the likelihood of each observation conditioned on all 
 previous observations.  For example, once the model sees several white
@@ -262,8 +257,10 @@ We can use these posterior likelihoods to compute the empirical information
 gain versus the previous mixture model::
 
    >>> for plant in range(20):
-   ...     obs = obsDict[(0,plant,0)]
-   ...     Le = entropy.LogPVector(numpy.array(llDict[(0,plant,0)]))
+   ...     obs = d[plant]
+   ...     obsLabel = obsGraph.get_label(plant)
+   ...     nodeLabel = dg.graph.get_label('chi', (obsLabel,))
+   ...     Le = entropy.LogPVector(numpy.array(llDict[nodeLabel]))
    ...     LeMix = entropy.sample_Le(obs, modelMix)
    ...     Ie = Le - LeMix
    ...     He = entropy.box_entropy(obs, 7)

@@ -14,27 +14,26 @@ def pheno1_test(modelWh, modelPu):
     prior = model.StateGraph({'START':{pstate:0.9, wstate:0.1}})
     stop = model.StopState()
     term = model.StateGraph({pstate:{stop:1.}, wstate:{stop:1.}})
+    dg = model.Model(model.NodeGraph({'START':{'chi':prior},
+                                      'chi':{'chi':term}}))
+
     d = {}
-    for plant in range(20):
-        d[plant] = prior
-    dg = model.DependencyGraph({'START':{0:{0:d}},
-                                0:{'STOP':model.TrivialMap({0:term})}})
-
-    obsDict = {}
     for plant in range(2): # two white plants
-        obsDict[(0,plant,0)] = modelWh.rvs(100)
+        d[plant] = modelWh.rvs(100)
     for plant in range(2, 20): # 18 purple plants
-        obsDict[(0,plant,0)] = modelPu.rvs(100)
+        d[plant] = modelPu.rvs(100)
+    obsGraph = model.ObsGraph({'START':d})
 
-    f, b, fsub, bsub, ll = dg.calc_fb(obsDict)
-    logPobs = b[model.START]
-    llDict = model.posterior_ll(f)
+    logPobs = dg.calc_fb((obsGraph,))
+    llDict = dg.posterior_ll()
 
     mixModel = get_mix_model(modelWh, modelPu)
 
     for plant in range(20):
-        obs = obsDict[(0,plant,0)]
-        Le = entropy.LogPVector(numpy.array(llDict[(0,plant,0)]))
+        obs = d[plant]
+        obsLabel = obsGraph.get_label(plant)
+        nodeLabel = dg.graph.get_label('chi', (obsLabel,))
+        Le = entropy.LogPVector(numpy.array(llDict[nodeLabel]))
         LeMix = entropy.sample_Le(obs, mixModel)
         Ie = Le - LeMix
         He = entropy.box_entropy(obs, 7)

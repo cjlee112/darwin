@@ -10,18 +10,19 @@ Robomendel has discovered that a phenotypic model for the color of the flowers o
 To test the species model, Robomendel decides to peform two experiments in the next growing season: a Wh x Wh cross and a Wh x Pu cross. Robomendel selects a plant with white flowers and a plant with purple flowers:
 
    >>> from darwin.robomendel import plantWh, plantPu, determine_color, multiset
-   >>> import numpy
 
 Crossing these plants should shed light on the same species versus different species hypothesis. Robomendel checks the results from cross the white plant with itself:
     
-    >>> from darwin.robomendel import plantWh, plantPu, determine_color, multiset
-    >>> white_crosses = [plantWh * plantWh for i in range(10)]
+    >>> from darwin.robomendel import PeaPlant, determine_color, multiset
+    >>> white_plant = PeaPlant(genome=PeaPlant.white_genome)
+    >>> white_crosses = [white_plant * white_plant for i in range(10)]
     >>> print multiset([determine_color(x) for x in white_crosses])
     {'white': 10}
 
 Looks like all white-flowered progeny! His observations are in line with the predictions for the different species model. Robomendel also crosses plantWh and plantPu. Robomendel checks the results.
 
-    >>> hybrid_crosses = [plantWh * plantPu for i in range(10)]
+    >>> purple_plant = PeaPlant(genome=PeaPlant.purple_genome)
+    >>> hybrid_crosses = [white_plant * purple_plant for i in range(10)]
     >>> print multiset([determine_color(x) for x in hybrid_crosses])
     {'purple': 10}
 
@@ -30,7 +31,7 @@ Not only did the seeds produce plants, all the flowers are purple! This fits the
 What's a robotic scientist to do!? Robomendel knows that in some cases infertile offspring can be produced by different species, so he decides to determine if the hybrid plants are sterile. He crosses a large number of hybrid plants and checks the results.
 
     >>> import random
-    >>> hybrid_crosses = [plantWh * plantPu for i in range(100)]
+    >>> hybrid_crosses = [white_plant * purple_plant for i in range(100)]
     >>> hybrid_progeny = [random.choice(hybrid_crosses) * random.choice(hybrid_crosses) for i in range(100)]
     >>> print multiset([determine_color(x) for x in hybrid_progeny])
     {'purple': 74, 'white': 26}

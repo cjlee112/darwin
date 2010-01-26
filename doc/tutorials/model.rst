@@ -16,6 +16,9 @@ state to a destination state.  Each state has an associated *emission
 dictionary* whose keys are its possible emission values (observations),
 and associated values are the likelihood of each possible observation.
 
+Creating State Objects
+^^^^^^^^^^^^^^^^^^^^^^
+
 The Occasionally Dishonest Casino has just two states:
 
 * **F**: a fair dice that emits all possible rolls with equal probability.
@@ -37,28 +40,13 @@ chain of observations (i.e. a sequence of states each emitting one
 observation).  Note that its first argument is just the name assigned
 to the state.
 
-Next we just construct the :class:`model.StateGraph` specifying the
-allowed transitions::
+The STOP State
+^^^^^^^^^^^^^^
 
-    >>> sg = StateGraph({F:{F:0.95, L:0.05}, L:{F:0.1, L:0.9}})
-
-i.e. there is a 5% probability of transitioning from F to L, but
-a 10% probability of transition back from L to F.
-
-To enable complete control over how the HMM is traversed, it's customary
-to specify the *prior* probabilities of the states (i.e. for the very
-first hidden state in the HMM) as a "transition probability" from the
-"START" state.  In darwin we construct this as another state graph
-that provides transitions from the special "START" state, which is just
-specified using the string `'START'`::
-
-    >>> prior = StateGraph({'START':{F:2./3., L:1./3.}})
-
-Finally, we specify how the path can exit the HMM, by providing a state
-graph with transitions to the special "STOP" state::
+To specify how the path can exit the HMM, we create a special "STOP"
+state::
 
     >>> stop = LinearStateStop()
-    >>> term = StateGraph({F:{stop:1.}, L:{stop:1.}})
 
 "STOP" transitions generally follow one of two possible patterns:
 
@@ -81,22 +69,58 @@ graph with transitions to the special "STOP" state::
 
 We follow the first model here.
 
+Building the State Graph
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+Next we just construct the :class:`model.StateGraph` specifying the
+allowed transitions::
+
+    >>> sg = StateGraph({F:{F:0.95, L:0.05, stop:1.}, 
+                         L:{F:0.1, L:0.9, stop:1.}})
+
+i.e. there is a 5% probability of transitioning from F to L, but
+a 10% probability of transition back from L to F.  Note that the 
+transitions to F and L sum to 100%.  Note also that under the 
+*fixed-length sequence* model, the probability of transition to
+*stop* is 0 until the **end** of the sequence, at which point it
+becomes 100%.
+
+Finally, to enable complete control over how the HMM is traversed, 
+it's customary
+to specify the *prior* probabilities of the states (i.e. for the very
+first hidden state in the HMM) as a "transition probability" from the
+"START" state.  In darwin we construct this as another state graph
+that provides transitions from the special "START" state, which is just
+specified using the string `'START'`::
+
+    >>> prior = StateGraph({'START':{F:2./3., L:1./3.}})
+
+
 Generating simulated observations
 ---------------------------------
 
 We first construct our HMM as a composite of these three state graphs::
 
-    >>> dg = BasicHMM(sg, prior, term)
+    >>> hmm = Model(NodeGraph({'theta':{'theta':sg}, 'START':{'theta':prior}}))
 
-We use its simulate_seq() method to generate a sequence of states
-and obserations via simulation::
-    >>> n = 10
-    >>> s,obs = dg.simulate_seq(n)
+We have created a single variable labelled `theta` that follows
+the states and transitions specified by our state graph `sg`.  
+We also specified the `prior` transitions from `START` to `theta`.
+
+We can now use the HMM's simulate_seq() method to generate a 
+sequence of 100 states and observations via simulation::
+    >>> n = 100
+    >>> s,obs = hmm.simulate_seq(n)
 
 Prior to performing Bayesian inference on this set of observations, 
-we must index our observations for fast look-up::
+we must transform them into a graph structure (in the standard
+Pygr format of a dictionary of the form {srcLabel:{destLabel:obs}}
+where srcLabel and destLabel are :class:`model.ObsLabel` and
+obs is a tuple of one or more observations.  For a linear sequence
+of observations, we can just use the convenience class
+:class:`model.ObsSequence` to construct this graph for us::
 
-    >>> obsDict = obs_sequence(0, obs)
+    >>> obsGraph = ObsSequence(obs)
 
 Bayesian inference on the HMM observations
 ------------------------------------------
@@ -104,15 +128,15 @@ Bayesian inference on the HMM observations
 Inference on the possible hidden states is computed using the 
 *forward-backward algorithm*::
 
-    >>> f, b, fsub, bsub, ll = dg.calc_fb(obsDict)
-    >>> logPobs = b[START]
+    >>> logPobs = hmm.calc_fb((obsGraph,))
 
-This computes several things (stored in log-probability format,
+This computes several things (stored as attributes on the
+`hmm` object, in log-probability format,
 as a dictionary whose keys are all possible hidden state values in
 the HMM):
 
 * **f**: represents the :math:`p(\vec{X}_1^{t-1},\Theta_t=s_i)` for a given
-  hidden state :math:`\Theta_t` to be in state :math:`s_i`.  
+  hidden variable :math:`\Theta_t` to be in state :math:`s_i`.  
 
 * **b**: represents the :math:`p(\vec{X}_{t+1}^n|\Theta_t=s_i)`,
   i.e. all observations emitted by "descendants" of this node.  Since
@@ -144,9 +168,9 @@ possible hidden states that could have emitted this observation.
 
 .. math:: p(X_t|\vec{X}_1^{t-1})=\frac{\sum_i{p(\vec{X}_1^t,\Theta_t=s_i)}}{\sum_i{p(\vec{X}_1^{t-1},\Theta_t=s_i)}}
 
-We simply compute this from the forward probabilities::
+We simply compute this from our HMM's forward probabilities::
 
-    >>> llDict = posterior_ll(f)
+    >>> llDict = hmm.posterior_ll()
 
 Printing out our results
 ------------------------
@@ -154,44 +178,54 @@ Printing out our results
 Let's just print out all our results::
 
     >>> for i in range(n): # print posteriors
-    ...    nodeF = Node(F, 0, (i,))
-    ...    nodeL = Node(L, 0, (i,))
+    ...    obsLabel = obsGraph.get_label(i)
+    ...    nodeLabel = hmm.graph.get_label('theta', (obsLabel,))
+    ...    nodeF = Node(F, nodeLabel)
+    ...    nodeL = Node(L, nodeLabel)
     ...    print '%s:%0.3f\t%s:%0.3f\tTRUE:%s,%d,%0.3f' % \
-    ...          (nodeF, exp(fsub[nodeF] + b[nodeF] - logPobs),
-    ...           nodeL, exp(fsub[nodeL] + b[nodeL] - logPobs),
-    ...           s[i], obs[i], exp(llDict[nodeF.get_obs_label(i)][0]))
+    ...          (nodeF, hmm.posterior(nodeF),
+    ...           nodeL, hmm.posterior(nodeL),
+    ...           s[i], obs[i], exp(llDict[nodeLabel][0]))
     ...
-    <F: (0,) (0, 0)>:0.324	<L: (0,) (0, 0)>:0.676	TRUE:<F: (0,) (0, 0)>,2,0.144
-    <F: (1,) (0, 0)>:0.206	<L: (1,) (0, 0)>:0.794	TRUE:<F: (1,) (0, 0)>,6,0.249
-    <F: (2,) (0, 0)>:0.178	<L: (2,) (0, 0)>:0.822	TRUE:<F: (2,) (0, 0)>,6,0.324
-    <F: (3,) (0, 0)>:0.208	<L: (3,) (0, 0)>:0.792	TRUE:<F: (3,) (0, 0)>,6,0.389
-    <F: (4,) (0, 0)>:0.330	<L: (4,) (0, 0)>:0.670	TRUE:<F: (4,) (0, 0)>,5,0.115
-    <F: (5,) (0, 0)>:0.384	<L: (5,) (0, 0)>:0.616	TRUE:<F: (5,) (0, 0)>,6,0.376
-    <F: (6,) (0, 0)>:0.581	<L: (6,) (0, 0)>:0.419	TRUE:<F: (6,) (0, 0)>,2,0.116
-    <F: (7,) (0, 0)>:0.686	<L: (7,) (0, 0)>:0.314	TRUE:<F: (7,) (0, 0)>,3,0.126
-    <F: (8,) (0, 0)>:0.737	<L: (8,) (0, 0)>:0.263	TRUE:<F: (8,) (0, 0)>,3,0.136
-    <F: (9,) (0, 0)>:0.750	<L: (9,) (0, 0)>:0.250	TRUE:<F: (9,) (0, 0)>,2,0.144
-    <F: (10,) (0, 0)>:0.731	<L: (10,) (0, 0)>:0.269	TRUE:<F: (10,) (0, 0)>,5,0.150
-    <F: (11,) (0, 0)>:0.674	<L: (11,) (0, 0)>:0.326	TRUE:<F: (11,) (0, 0)>,5,0.154
-    <F: (12,) (0, 0)>:0.557	<L: (12,) (0, 0)>:0.443	TRUE:<F: (12,) (0, 0)>,6,0.218
-    <F: (13,) (0, 0)>:0.545	<L: (13,) (0, 0)>:0.455	TRUE:<F: (13,) (0, 0)>,6,0.284
-    <F: (14,) (0, 0)>:0.624	<L: (14,) (0, 0)>:0.376	TRUE:<L: (14,) (0, 0)>,2,0.128
-    <F: (15,) (0, 0)>:0.653	<L: (15,) (0, 0)>:0.347	TRUE:<L: (15,) (0, 0)>,5,0.138
-    <F: (16,) (0, 0)>:0.644	<L: (16,) (0, 0)>:0.356	TRUE:<L: (16,) (0, 0)>,3,0.146
-    <F: (17,) (0, 0)>:0.593	<L: (17,) (0, 0)>:0.407	TRUE:<L: (17,) (0, 0)>,6,0.245
-    <F: (18,) (0, 0)>:0.628	<L: (18,) (0, 0)>:0.372	TRUE:<L: (18,) (0, 0)>,4,0.136
-    <F: (19,) (0, 0)>:0.622	<L: (19,) (0, 0)>:0.378	TRUE:<F: (19,) (0, 0)>,2,0.144
-    <F: (20,) (0, 0)>:0.573	<L: (20,) (0, 0)>:0.427	TRUE:<L: (20,) (0, 0)>,5,0.150
-    <F: (21,) (0, 0)>:0.466	<L: (21,) (0, 0)>:0.534	TRUE:<F: (21,) (0, 0)>,6,0.230
-    <F: (22,) (0, 0)>:0.457	<L: (22,) (0, 0)>:0.543	TRUE:<F: (22,) (0, 0)>,6,0.300
-    <F: (23,) (0, 0)>:0.539	<L: (23,) (0, 0)>:0.461	TRUE:<F: (23,) (0, 0)>,5,0.125
-    <F: (24,) (0, 0)>:0.569	<L: (24,) (0, 0)>:0.431	TRUE:<F: (24,) (0, 0)>,6,0.323
-    <F: (25,) (0, 0)>:0.719	<L: (25,) (0, 0)>:0.281	TRUE:<F: (25,) (0, 0)>,4,0.122
-    <F: (26,) (0, 0)>:0.800	<L: (26,) (0, 0)>:0.200	TRUE:<F: (26,) (0, 0)>,3,0.132
-    <F: (27,) (0, 0)>:0.840	<L: (27,) (0, 0)>:0.160	TRUE:<F: (27,) (0, 0)>,1,0.141
-    <F: (28,) (0, 0)>:0.852	<L: (28,) (0, 0)>:0.148	TRUE:<F: (28,) (0, 0)>,4,0.148
-    <F: (29,) (0, 0)>:0.842	<L: (29,) (0, 0)>:0.158	TRUE:<F: (29,) (0, 0)>,3,0.153
-    <F: (30,) (0, 0)>:0.804	<L: (30,) (0, 0)>:0.196	TRUE:<F: (30,) (0, 0)>,2,0.156
+    <F: ('theta', (0,))>:0.931	<L: ('theta', (0,))>:0.069	TRUE:<F: ('theta', (0,))>,1,0.144
+    <F: ('theta', (1,))>:0.953	<L: ('theta', (1,))>:0.047	TRUE:<F: ('theta', (1,))>,3,0.150
+    <F: ('theta', (2,))>:0.965	<L: ('theta', (2,))>:0.035	TRUE:<F: ('theta', (2,))>,4,0.154
+    <F: ('theta', (3,))>:0.970	<L: ('theta', (3,))>:0.030	TRUE:<F: ('theta', (3,))>,4,0.156
+    <F: ('theta', (4,))>:0.972	<L: ('theta', (4,))>:0.028	TRUE:<F: ('theta', (4,))>,2,0.158
+    <F: ('theta', (5,))>:0.970	<L: ('theta', (5,))>:0.030	TRUE:<F: ('theta', (5,))>,5,0.159
+    <F: ('theta', (6,))>:0.964	<L: ('theta', (6,))>:0.036	TRUE:<F: ('theta', (6,))>,3,0.159
+    <F: ('theta', (7,))>:0.953	<L: ('theta', (7,))>:0.047	TRUE:<F: ('theta', (7,))>,1,0.159
+    <F: ('theta', (8,))>:0.930	<L: ('theta', (8,))>:0.070	TRUE:<F: ('theta', (8,))>,5,0.159
+    <F: ('theta', (9,))>:0.890	<L: ('theta', (9,))>:0.110	TRUE:<F: ('theta', (9,))>,6,0.203
+    <F: ('theta', (10,))>:0.912	<L: ('theta', (10,))>:0.088	TRUE:<F: ('theta', (10,))>,3,0.148
+    <F: ('theta', (11,))>:0.918	<L: ('theta', (11,))>:0.082	TRUE:<F: ('theta', (11,))>,3,0.153
+    <F: ('theta', (12,))>:0.909	<L: ('theta', (12,))>:0.091	TRUE:<F: ('theta', (12,))>,5,0.156
+    <F: ('theta', (13,))>:0.883	<L: ('theta', (13,))>:0.117	TRUE:<F: ('theta', (13,))>,2,0.157
+    <F: ('theta', (14,))>:0.831	<L: ('theta', (14,))>:0.169	TRUE:<F: ('theta', (14,))>,2,0.158
+    <F: ('theta', (15,))>:0.733	<L: ('theta', (15,))>:0.267	TRUE:<F: ('theta', (15,))>,6,0.206
+    <F: ('theta', (16,))>:0.730	<L: ('theta', (16,))>:0.270	TRUE:<F: ('theta', (16,))>,6,0.264
+    <F: ('theta', (17,))>:0.817	<L: ('theta', (17,))>:0.183	TRUE:<F: ('theta', (17,))>,1,0.132
+    <F: ('theta', (18,))>:0.861	<L: ('theta', (18,))>:0.139	TRUE:<F: ('theta', (18,))>,5,0.141
+    <F: ('theta', (19,))>:0.879	<L: ('theta', (19,))>:0.121	TRUE:<F: ('theta', (19,))>,3,0.148
+    <F: ('theta', (20,))>:0.877	<L: ('theta', (20,))>:0.123	TRUE:<F: ('theta', (20,))>,4,0.152
+    <F: ('theta', (21,))>:0.854	<L: ('theta', (21,))>:0.146	TRUE:<F: ('theta', (21,))>,3,0.155
+    <F: ('theta', (22,))>:0.802	<L: ('theta', (22,))>:0.198	TRUE:<F: ('theta', (22,))>,1,0.157
+    <F: ('theta', (23,))>:0.703	<L: ('theta', (23,))>:0.297	TRUE:<F: ('theta', (23,))>,2,0.158
+    <F: ('theta', (24,))>:0.521	<L: ('theta', (24,))>:0.479	TRUE:<F: ('theta', (24,))>,5,0.159
+    <F: ('theta', (25,))>:0.193	<L: ('theta', (25,))>:0.807	TRUE:<L: ('theta', (25,))>,6,0.204
+    <F: ('theta', (26,))>:0.079	<L: ('theta', (26,))>:0.921	TRUE:<L: ('theta', (26,))>,6,0.262
+    <F: ('theta', (27,))>:0.041	<L: ('theta', (27,))>:0.959	TRUE:<L: ('theta', (27,))>,6,0.338
+    <F: ('theta', (28,))>:0.033	<L: ('theta', (28,))>:0.967	TRUE:<L: ('theta', (28,))>,6,0.399
+    <F: ('theta', (29,))>:0.043	<L: ('theta', (29,))>:0.957	TRUE:<L: ('theta', (29,))>,3,0.114
+    <F: ('theta', (30,))>:0.025	<L: ('theta', (30,))>:0.975	TRUE:<L: ('theta', (30,))>,6,0.380
+    <F: ('theta', (31,))>:0.023	<L: ('theta', (31,))>:0.977	TRUE:<L: ('theta', (31,))>,6,0.422
+    <F: ('theta', (32,))>:0.036	<L: ('theta', (32,))>:0.964	TRUE:<L: ('theta', (32,))>,5,0.112
+    <F: ('theta', (33,))>:0.022	<L: ('theta', (33,))>:0.978	TRUE:<L: ('theta', (33,))>,6,0.391
+    <F: ('theta', (34,))>:0.022	<L: ('theta', (34,))>:0.978	TRUE:<L: ('theta', (34,))>,6,0.427
+    <F: ('theta', (35,))>:0.036	<L: ('theta', (35,))>:0.964	TRUE:<L: ('theta', (35,))>,1,0.111
+    <F: ('theta', (36,))>:0.023	<L: ('theta', (36,))>:0.977	TRUE:<L: ('theta', (36,))>,6,0.394
+    <F: ('theta', (37,))>:0.024	<L: ('theta', (37,))>:0.976	TRUE:<L: ('theta', (37,))>,6,0.428
+    <F: ('theta', (38,))>:0.041	<L: ('theta', (38,))>:0.959	TRUE:<L: ('theta', (38,))>,6,0.443
 
 This example illustrates several points:
 

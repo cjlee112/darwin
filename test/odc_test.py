@@ -10,21 +10,22 @@ def odc_test(p6=.5, n=100):
     p = 1. / 6.
     F = LinearState('F', EmissionDict({1:p, 2:p, 3:p, 4:p, 5:p, 6:p}))
     stop = LinearStateStop()
-    sg = StateGraph({F:{F:0.95, L:0.05}, L:{F:0.1, L:0.9}})
+    sg = StateGraph({F:{F:0.95, L:0.05, stop:1.},
+                     L:{F:0.1, L:0.9, stop:1.}})
     prior = StateGraph({'START':{F:2./3., L:1./3.}})
-    term = StateGraph({F:{stop:1.}, L:{stop:1.}})
-    dg = BasicHMM(sg, prior, term)
+    hmm = Model(NodeGraph({'theta':{'theta':sg}, 'START':{'theta':prior}}))
 
-    s,obs = dg.simulate_seq(n)
-    obsDict = obs_sequence(0, obs)
-    f, b, fsub, bsub, ll = dg.calc_fb(obsDict)
-    logPobs = b[START]
-    llDict = posterior_ll(f)
+    s,obs = hmm.simulate_seq(n)
+    obsGraph = ObsSequence(obs)
+    logPobs = hmm.calc_fb((obsGraph,))
+    llDict = hmm.posterior_ll()
     for i in range(n): # print posteriors
-        nodeF = Node(F, 0, (i,), obsDict)
-        nodeL = Node(L, 0, (i,), obsDict)
+        obsLabel = obsGraph.get_label(i)
+        nodeLabel = hmm.graph.get_label('theta', (obsLabel,))
+        nodeF = Node(F, nodeLabel)
+        nodeL = Node(L, nodeLabel)
         print '%s:%0.3f\t%s:%0.3f\tTRUE:%s,%d,%0.3f' % \
-              (nodeF, exp(fsub[nodeF] + b[nodeF] - logPobs),
-               nodeL, exp(fsub[nodeL] + b[nodeL] - logPobs),
-               s[i], obs[i], exp(llDict[nodeF.get_obs_label(i)][0]))
-    return dg
+              (nodeF, hmm.posterior(nodeF),
+               nodeL, hmm.posterior(nodeL),
+               s[i], obs[i], exp(llDict[nodeLabel][0]))
+    return hmm
