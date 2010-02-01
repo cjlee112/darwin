@@ -21,26 +21,31 @@ def multi_coef(n_seq):
         result = result / float(factorial(n_seq[i]))
     return result
 
+# http://en.wikipedia.org/wiki/Multinomial_distribution 
 class Multinomial(stats.rv_discrete):
 
-    def __init__(self, n, p_seq):
-        self.n = n
+    def __init__(self, p_seq):
+        #self.n = n
         self.p_seq = p_seq
 
     def rvs(self, num_obs):
-        multi = numpy.random.multinomial(self.n, self.p_seq, num_obs)
-        return multi
+        obs = []
+        for i in range(num_obs):
+            multi = numpy.random.multinomial(1, self.p_seq)
+            for i in range(len(multi)):
+                if multi[i] > 0:
+                    obs.append(i)
+                    break
+        return obs
 
     def pmf(self, n_seq):
-        n = numpy.sum(n_seq)
-        if n != self.n:
-            return 0
-        # http://en.wikipedia.org/wiki/Multinomial_distribution 
+        #n = numpy.sum(n_seq)
+        #if n != self.n:
+            #return 0
         result = multi_coef(n_seq)
         for i in range(len(n_seq)):
             result *= self.p_seq[i] ** n_seq[i]
         return result
-
 
 
 def multiset(list_):

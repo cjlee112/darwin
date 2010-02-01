@@ -16,6 +16,7 @@ def calc_dist(vectors):
         l.append(numpy.core.sum(e*e,1))
     return l
 
+
 def calc_entropy(vectors,n=2):
     'estimate entropy from sample of points in high-dim space'
     ndim = len(vectors[0])
@@ -151,6 +152,12 @@ def sample_Le(vectors, model):
     logP = numpy.log(model.pdf(vectors))
     return LogPVector(logP)
 
+def discrete_sample_Le(vectors, model):
+    '''calculate average log-likelihood and bound by LoLN.
+    vectors: sampled data points;
+    model: likelihood model with pdf() method'''
+    logP = numpy.log(model.pmf(vectors))
+    return LogPVector(logP)
 
 def d2_density(v, m):
     '''experimental method for estimating density using mean-squared
