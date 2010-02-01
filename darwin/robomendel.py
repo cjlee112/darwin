@@ -7,6 +7,42 @@ from mendel import *
 from entropy import *
 import numpy
 
+def factorial(n):
+    result = 1
+    if n > 1:
+        for i in range(2, n+1):
+            result *= i
+    return result
+
+def multi_coef(n_seq):
+    n = numpy.sum(n_seq)
+    result = float(factorial(n))
+    for i in range(len(n_seq)):
+        result = result / float(factorial(n_seq[i]))
+    return result
+
+class Multinomial(stats.rv_discrete):
+
+    def __init__(self, n, p_seq):
+        self.n = n
+        self.p_seq = p_seq
+
+    def rvs(self, num_obs):
+        multi = numpy.random.multinomial(self.n, self.p_seq, num_obs)
+        return multi
+
+    def pmf(self, n_seq):
+        n = numpy.sum(n_seq)
+        if n != self.n:
+            return 0
+        # http://en.wikipedia.org/wiki/Multinomial_distribution 
+        result = multi_coef(n_seq)
+        for i in range(len(n_seq)):
+            result *= self.p_seq[i] ** n_seq[i]
+        return result
+
+
+
 def multiset(list_):
     """Returns a multiset (a dictionary) from the input iterable list_."""
     mset = dict()
