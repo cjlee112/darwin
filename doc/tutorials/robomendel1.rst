@@ -299,5 +299,85 @@ all-purple or all-white -- not a mixture as predicted by the mixture model.
 The phenotype model has successfully converted all the potential 
 information for these observations into empirical information.
 
+Identifying Law of Large Number Partitions
+------------------------------------------
 
+Our convergence guarantee depends on applying the Law of Large
+Numbers to a sample.  The question is, what data can be pooled together
+as "one sample"?  This is important for ensuring that our metric 
+is "intensive" i.e. independent of arbitrary sample size variations.
+If the dataset actually contained observations from 
+two distinct experiments, we should compute a
+separate LoLN convergence for each one, rather than pooling them 
+together.
+
+One way to approach this is to look for evidence that a split is
+required.  Specifically, we look at the observations as multidimensional
+vectors, and see if a split on one variable yields predictive power
+for predicting the other observable(s).  This requires an empirical
+version of the mutual information: specifically, we compute the
+conditional :math:`H_e(Y|X)` and compare with the pooled :math:`H_e(Y)`.
+If :math:`I_e(X;Y)=H_e(Y)-H_e(Y|X)` is convincingly non-zero (again
+via a LoLN convergence), then we apparently need to split the *Y* data
+on *X*.
+
+Let's apply this to the RoboMendel case we just looked at.  We take
+the flower color observations for our 20 plants, and turn them into
+a set of (X,Y)=(plantID,color) pairs::
+
+   >>> tuples = []
+   >>> for i in range(20):
+   ...    for v in d[i]:
+   ...       tuples.append((i,v))
+   ...
+
+We then compute the 
+conditional empirical entropy versus the pooled empirical entropy::
+
+   >>> condHe = entropy.cond_entropy(tuples, 7)
+   >>> ydata = numpy.array([t[1] for t in tuples])
+   >>> He = entropy.box_entropy(ydata, 7)
+   >>> diff = He - condHe
+   >>> diff.mean
+   0.4060161767931969
+   >>> diff.get_bound()
+   0.31823358300181182
+
+Evidently there is mutual information linking the plantID to 
+the flower color.
+
+We can also compute the theoretical answer directly::
+
+   >>> from math import log
+   >>> -.9*log(.9)-.1*log(.1)
+   0.3250829733914482
+
+This just reflects the 9:1 split between purple vs. white plants.
+
+(Note: while the get_bound() lower bound estimate for conditional entropy
+seems pretty good, the mean appears to be significantly off.  I suspected
+that my conditional entropy calculation is biased to underestimate
+the entropy (i.e. over-estimate the density), and this seems to confirm
+that suspicion).
+
+
+We can compute the same thing for just the purple plants::
+
+   >>> tuples = []
+   >>> for i in range(2,20):
+   ...     for v in d[i]:
+   ...             tuples.append((i,v))
+   ... 
+   >>> condHe2 = entropy.cond_entropy(tuples, 7)
+   >>> ydata = numpy.array([t[1] for t in tuples])
+   >>> He2 = entropy.box_entropy(ydata, 7)
+   >>> diff2 = He2 - condHe2
+   >>> diff2.mean
+   0.095668608283625001
+   >>> diff2.get_bound()
+   0.015153422498655061
+
+The lower bound gives approximately zero, as it should.  (I think 
+we need to look at this calculation closely to see if we can identify
+a bias in the estimator.  It is close, but not quite right).
 
