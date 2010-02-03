@@ -25,7 +25,6 @@ def multi_coef(n_seq):
 class Multinomial(stats.rv_discrete):
 
     def __init__(self, p_seq):
-        #self.n = n
         self.p_seq = p_seq
 
     def rvs(self, num_obs):
@@ -38,14 +37,8 @@ class Multinomial(stats.rv_discrete):
                     break
         return obs
 
-    def pmf(self, n_seq):
-        #n = numpy.sum(n_seq)
-        #if n != self.n:
-            #return 0
-        result = multi_coef(n_seq)
-        for i in range(len(n_seq)):
-            result *= self.p_seq[i] ** n_seq[i]
-        return result
+    def pmf(self, obs):
+        return self.p_seq[obs]
 
 
 def multiset(list_):
