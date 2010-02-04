@@ -38,6 +38,8 @@ class Multinomial(stats.rv_discrete):
         return obs
 
     def pmf(self, obs):
+        if hasattr(obs,"__iter__"):
+            return map(lambda x: self.p_seq[x], obs)
         return self.p_seq[obs]
 
 
