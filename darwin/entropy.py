@@ -149,13 +149,9 @@ def sample_Le(vectors, model):
     '''calculate average log-likelihood and bound by LoLN.
     vectors: sampled data points;
     model: likelihood model with pdf() method'''
-    logP = numpy.log(model.pdf(vectors))
-    return LogPVector(logP)
-
-def discrete_sample_Le(vectors, model):
-    '''calculate average log-likelihood and bound by LoLN.
-    vectors: sampled data points;
-    model: likelihood model with pdf() method'''
+    # Detect discrete vs. continuous models.
+    if hasattr(model,"pdf"):
+        logP = numpy.log(model.pdf(vectors))
     logP = numpy.log(model.pmf(vectors))
     return LogPVector(logP)
 
