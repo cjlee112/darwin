@@ -104,6 +104,16 @@ def box_entropy(vectors, m):
     '''calculate differential entropy using specified number of points m
     vectors: sampled data points;
     m: number of nearest points to include in each density-sampling box'''
+    # handle string data from multinomial
+    if isinstance(vectors[0], str):
+        count = 0
+        mapping = dict()
+        for v in vectors:
+            if v not in mapping:
+                mapping[v] = count
+                count += 1
+    vectors = [mapping[v] for v in vectors]
+
     if not hasattr(vectors, 'ndim'):
         a = numpy.core.array(vectors)
     else:

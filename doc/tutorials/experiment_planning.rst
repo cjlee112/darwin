@@ -9,17 +9,21 @@ Robomendel has discovered that a phenotypic model for the color of the flowers o
 
 To test the species model, Robomendel decides to peform two experiments in the next growing season: a Wh x Wh cross and a Wh x Pu cross. Robomendel selects a plant with white flowers and a plant with purple flowers:
 
-   >>> from darwin.robomendel import plantWh, plantPu, determine_color, multiset
+   >>> from darwin.robomendel import plantWh, plantPu, determine_color, multiset, Multinomial
 
 Crossing these plants should shed light on the same species versus different species hypothesis. Robomendel checks the results from cross the white plant with itself:
-    
+
     >>> from darwin.robomendel import PeaPlant, determine_color, multiset
     >>> white_plant = PeaPlant(genome=PeaPlant.white_genome)
     >>> white_crosses = [white_plant * white_plant for i in range(10)]
     >>> print multiset([determine_color(x) for x in white_crosses])
     {'white': 10}
 
-Looks like all white-flowered progeny! His observations are in line with the predictions for the different species model. Robomendel also crosses plantWh and plantPu. Robomendel checks the results.
+Looks like all white-flowered progeny! His observations are in line with the predictions for the different species model.
+
+
+
+Robomendel also crosses plantWh and plantPu. Robomendel checks the results.
 
     >>> purple_plant = PeaPlant(genome=PeaPlant.purple_genome)
     >>> hybrid_crosses = [white_plant * purple_plant for i in range(10)]
