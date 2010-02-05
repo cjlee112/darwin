@@ -23,23 +23,26 @@ def multi_coef(n_seq):
 
 # http://en.wikipedia.org/wiki/Multinomial_distribution 
 class Multinomial(stats.rv_discrete):
+    """Forms a multinomial from a probability dictionary, e.g. {'Pu':0.9, 'Wh': 0.1}"""
 
-    def __init__(self, p_seq):
-        self.p_seq = p_seq
+    def __init__(self, p_dict):
+        self.p_dict = p_dict
 
     def rvs(self, num_obs):
         obs = []
+        keys = self.p_dict.keys()
+        values = [self.p_dict[key] for key in keys]
         for i in range(num_obs):
-            multi = numpy.random.multinomial(1, self.p_seq)
+            multi = numpy.random.multinomial(1, values)
             for i in range(len(multi)):
                 if multi[i] > 0:
-                    obs.append(i)
+                    obs.append(keys[i])
                     break
         return obs
 
     def pmf(self, obs):
         if hasattr(obs,"__iter__"):
-            return map(lambda x: self.p_seq[x], obs)
+            return map(lambda x: self.p_dict[x], obs)
         return self.p_seq[obs]
 
 
