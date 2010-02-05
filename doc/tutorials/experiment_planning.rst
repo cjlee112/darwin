@@ -9,21 +9,14 @@ Robomendel has discovered that a phenotypic model for the color of the flowers o
 
 To test the species model, Robomendel decides to peform two experiments in the next growing season: a Wh x Wh cross and a Wh x Pu cross. Robomendel selects a plant with white flowers and a plant with purple flowers:
 
-   >>> from darwin.robomendel import plantWh, plantPu, determine_color, multiset, Multinomial
+    >>> from darwin.robomendel import *
+    >>> from darwin.entropy import *
 
 Crossing these plants should shed light on the same species versus different species hypothesis. Robomendel checks the results from cross the white plant with itself:
 
-    >>> from darwin.robomendel import PeaPlant, determine_color, multiset
     >>> white_plant = PeaPlant(genome=PeaPlant.white_genome)
     >>> white_crosses = [white_plant * white_plant for i in range(20)]
-    >>> print multiset([determine_color(x) for x in white_crosses])
-    {'white': 10}
-
-    >>> from darwin.robomendel import *
-    >>> from darwin.entropy import *
-    >>> white_plant = PeaPlant(genome=PeaPlant.white_genome)
-    >>> white_crosses = [white_plant * white_plant for i in range(20)]
-    >>> obs = [determine_color(x) for x in white_crosses]
+    >>> obs = map(determine_color, hybrids)
     >>> model = Multinomial({'white': 1.0, 'purple': 0.0})
     >>> He = box_entropy(obs, 7)
     >>> Le = sample_Le(obs, model)
@@ -33,28 +26,42 @@ Crossing these plants should shed light on the same species versus different spe
     >>> Ip.get_bound()
     nan
 
-Looks like all white-flowered progeny! His observations are in line with the predictions for the different species model.
-
-
+[Looks like all white-flowered progeny! His observations are in line with the predictions for the different species model.]
 
 Robomendel also crosses plantWh and plantPu. Robomendel checks the results.
 
     >>> purple_plant = PeaPlant(genome=PeaPlant.purple_genome)
-    >>> hybrid_crosses = [white_plant * purple_plant for i in range(10)]
-    >>> print multiset([determine_color(x) for x in hybrid_crosses])
-    {'purple': 10}
+    >>> model = Multinomial({'white': 0, 'purple': 0, None: 1.0})
+    >>> hybrid_crosses = [white_plant * purple_plant for i in range(20)]
+    >>> hybrids = [white_plant * purple_plant for i in range(20)]
+    >>> obs = map(determine_color, hybrids)
+    >>> obs
+    ['purple', 'purple', 'purple', 'purple', 'purple', 'purple', 'purple', 'purple', 'purple', 'purple', 'purple', 'purple', 'purple', 'purple', 'purple', 'purple', 'purple', 'purple', 'purple', 'purple']
+    >>> He = box_entropy(obs, 7)
+    >>> Le = sample_Le(obs, model)
+    >>> Ip = -Le - He
+    >>> Ip.mean
+    nan
+    >>> Ip.get_bound()
+    nan
 
 Not only did the seeds produce plants, all the flowers are purple! This fits the prediction of the same species model! Not only has RoboMendel failed to result the source of the white flowers observation, he has another contradiction!
 
 What's a robotic scientist to do!? Robomendel knows that in some cases infertile offspring can be produced by different species, so he decides to determine if the hybrid plants are sterile. He crosses a large number of hybrid plants and checks the results.
 
-    >>> import random
-    >>> hybrid_crosses = [white_plant * purple_plant for i in range(100)]
-    >>> hybrid_progeny = [random.choice(hybrid_crosses) * random.choice(hybrid_crosses) for i in range(100)]
-    >>> print multiset([determine_color(x) for x in hybrid_progeny])
-    {'purple': 74, 'white': 26}
+    >>> hybrid = hybrids[0]
+    >>> hybrid_crosses = [hybrid * hybrid for i in range(20)]
+    >>> obs = map(determine_color, hybrid_crosses)
+    >>> He = box_entropy(obs, 7)
+    >>> Le = sample_Le(obs, model)
+    >>> Ip = -Le - He
+    >>> Ip.mean
+    inf
+    >>> Ip.get_bound()
+    nan
 
-Not only are the seeds viable, over 25% of the plants have white flowers and nearly 75% have purple flowers! Repeating the experiment, RoboMendel finds that on average 25% of the plants have white flowers.
+----- x -----
+
 
 RoboMendel's latest experiment deals a decisive blow to the different species model, but the pattern of offspring does not fit the bio-object model RoboMendel has been using for his pea plants. RoboMendel can construct a Markov model for his observations, with two states Pu and Wh and transition probabilities Pr(Wh|Pu) = \lambda and Pr(Pu|Pu) = 1 - \lambda . Based on past observations, Robomendel expects 0.25 as the value for lambda.
 
