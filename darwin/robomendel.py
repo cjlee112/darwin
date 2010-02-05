@@ -91,5 +91,5 @@ class PeaPlant(object):
 
     def rvs(self, n=1):
         """Observe n times."""
-        return genome.get_phenotypes()[0].rvs(n)
+        return self.genome.get_phenotypes()[0].rvs(n)
 
