@@ -16,7 +16,7 @@ Crossing these plants should shed light on the same species versus different spe
 
     >>> white_plant = PeaPlant(genome=PeaPlant.white_genome)
     >>> white_crosses = [white_plant * white_plant for i in range(20)]
-    >>> obs = map(determine_color, hybrids)
+    >>> obs = map(determine_color, white_crosses)
     >>> model = Multinomial({'white': 1.0, 'purple': 0.0})
     >>> He = box_entropy(obs, 7)
     >>> Le = sample_Le(obs, model)
