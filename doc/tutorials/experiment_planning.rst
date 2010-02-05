@@ -17,6 +17,8 @@ Crossing these plants should shed light on the same species versus different spe
     >>> white_plant = PeaPlant(genome=PeaPlant.white_genome)
     >>> white_crosses = [white_plant * white_plant for i in range(20)]
     >>> obs = map(determine_color, white_crosses)
+    >>> obs
+    ['white', 'white', 'white', 'white', 'white', 'white', 'white', 'white', 'white', 'white', 'white', 'white', 'white', 'white', 'white', 'white', 'white', 'white', 'white', 'white']   
     >>> model = Multinomial({'white': 1.0, 'purple': 0.0})
     >>> He = box_entropy(obs, 7)
     >>> Le = sample_Le(obs, model)
@@ -61,7 +63,7 @@ What's a robotic scientist to do!? Robomendel knows that in some cases infertile
     nan
 
 ----- x -----
-
+(Older...)
 
 RoboMendel's latest experiment deals a decisive blow to the different species model, but the pattern of offspring does not fit the bio-object model RoboMendel has been using for his pea plants. RoboMendel can construct a Markov model for his observations, with two states Pu and Wh and transition probabilities Pr(Wh|Pu) = \lambda and Pr(Pu|Pu) = 1 - \lambda . Based on past observations, Robomendel expects 0.25 as the value for lambda.
 
