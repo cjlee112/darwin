@@ -15,9 +15,23 @@ Crossing these plants should shed light on the same species versus different spe
 
     >>> from darwin.robomendel import PeaPlant, determine_color, multiset
     >>> white_plant = PeaPlant(genome=PeaPlant.white_genome)
-    >>> white_crosses = [white_plant * white_plant for i in range(10)]
+    >>> white_crosses = [white_plant * white_plant for i in range(20)]
     >>> print multiset([determine_color(x) for x in white_crosses])
     {'white': 10}
+
+    >>> from darwin.robomendel import *
+    >>> from darwin.entropy import *
+    >>> white_plant = PeaPlant(genome=PeaPlant.white_genome)
+    >>> white_crosses = [white_plant * white_plant for i in range(20)]
+    >>> obs = [determine_color(x) for x in white_crosses]
+    >>> model = Multinomial({'white': 1.0, 'purple': 0.0})
+    >>> He = box_entropy(obs, 7)
+    >>> Le = sample_Le(obs, model)
+    >>> Ip = -Le - He
+    >>> Ip.mean
+    nan
+    >>> Ip.get_bound()
+    nan
 
 Looks like all white-flowered progeny! His observations are in line with the predictions for the different species model.
 

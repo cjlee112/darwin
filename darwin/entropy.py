@@ -112,7 +112,7 @@ def box_entropy(vectors, m):
             if v not in mapping:
                 mapping[v] = count
                 count += 1
-    vectors = [mapping[v] for v in vectors]
+        vectors = [mapping[v] for v in vectors]
 
     if not hasattr(vectors, 'ndim'):
         a = numpy.core.array(vectors)
