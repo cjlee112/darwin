@@ -109,6 +109,8 @@ def discrete_box_entropy(vectors, m):
                 mapping[v] = count
                 count += 1
         vectors = [mapping[v] for v in vectors]
+        if len(set(vectors)) == 1:
+            return LogPVector(1)
     return box_entropy(vectors, m)
 
 def box_entropy(vectors, m):
