@@ -42,7 +42,13 @@ class Multinomial(stats.rv_discrete):
 
     def pmf(self, obs):
         if hasattr(obs,"__iter__"):
-            return map(lambda x: self.p_dict[x], obs)
+            results = []
+            for x in obs:
+                try:
+                    results.append(self.p_dict[x])
+                else:
+                    results.append(0)
+            return results
         return self.p_seq[obs]
 
 

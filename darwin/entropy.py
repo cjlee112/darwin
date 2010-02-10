@@ -99,12 +99,8 @@ class LogPVector(object):
     def __sub__(self, other):
         return SampleEstimator(self.sample -  other.sample)
 
-
-def box_entropy(vectors, m):
-    '''calculate differential entropy using specified number of points m
-    vectors: sampled data points;
-    m: number of nearest points to include in each density-sampling box'''
-    # handle string data from multinomial
+def discrete_box_entropy(vectors, m):
+    # Check for observations as strings for the multinomial.
     if isinstance(vectors[0], str):
         count = 0
         mapping = dict()
@@ -113,7 +109,13 @@ def box_entropy(vectors, m):
                 mapping[v] = count
                 count += 1
         vectors = [mapping[v] for v in vectors]
+    return box_entropy(vectors, m)
 
+def box_entropy(vectors, m):
+    '''calculate differential entropy using specified number of points m
+    vectors: sampled data points;
+    m: number of nearest points to include in each density-sampling box'''
+    # handle string data from multinomial
     if not hasattr(vectors, 'ndim'):
         a = numpy.core.array(vectors)
     else:
@@ -139,6 +141,7 @@ def box_entropy(vectors, m):
            - numpy.log(nm/(n - 1))
     return LogPVector(hvec)
 
+
 ## def box_entropy(vectors,m):
 ##     d = box_density(vectors,m)
 ##     return -sum(numpy.core.log(d))/len(vectors)
@@ -154,16 +157,16 @@ sample box going outside the bounding box, and also the bias that every
 sample box is of course centered on a data point...
 '''
 
+def discrete_sample_Le(vectors, model):
+    logP = numpy.log(model.pmf(vectors))
+    return LogPVector(logP)
 
 def sample_Le(vectors, model):
     '''calculate average log-likelihood and bound by LoLN.
     vectors: sampled data points;
     model: likelihood model with pdf() method'''
     # Detect discrete vs. continuous models.
-    if hasattr(model,"pdf"):
-        logP = numpy.log(model.pdf(vectors))
-    else:
-        logP = numpy.log(model.pmf(vectors))
+    logP = numpy.log(model.pdf(vectors))
     return LogPVector(logP)
 
 
