@@ -99,6 +99,35 @@ class LogPVector(object):
     def __sub__(self, other):
         return SampleEstimator(self.sample -  other.sample)
 
+def He_discrete(vectors, sample=None, uninformativeDensity=None):
+    '''Compute empirical entropy for discrete observations.
+    vectors is used as the probability density;
+    sample is used as the points for sampling the density;
+    if None, it defaults to vectors.'''
+    counts = {}
+    total = float(len(vectors))
+    for obs in vectors:
+        try:
+            counts[obs] += 1
+        except KeyError:
+            counts[obs] = 1
+    if sample is None:
+        sample = vectors
+    else: # handle values present in sample but not vectors w/ pseudocounts
+        addPseudoCounts = True
+        for obs in sample:
+            if obs not in counts: # need to add uninformative density
+                if addPseudoCounts: # +1 count to each existing category
+                    for obs in counts:
+                        counts[obs] += 1
+                    total += len(counts)
+                    addPseudoCounts = False
+                counts[obs] = 1 # +1 count for this unobserved category
+                total += 1.
+    for obs, n in counts.items(): # transform to logP
+        counts[obs] = log(n / total)
+    return LogPVector(numpy.core.array([counts[obs] for obs in sample]))
+
 def discrete_box_entropy(vectors, m):
     # Check for observations as strings for the multinomial.
     if isinstance(vectors[0], str):
