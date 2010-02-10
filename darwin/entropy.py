@@ -162,8 +162,10 @@ def sample_Le(vectors, model):
     # Detect discrete vs. continuous models.
     if hasattr(model,"pdf"):
         logP = numpy.log(model.pdf(vectors))
-    logP = numpy.log(model.pmf(vectors))
+    else:
+        logP = numpy.log(model.pmf(vectors))
     return LogPVector(logP)
+
 
 def d2_density(v, m):
     '''experimental method for estimating density using mean-squared
