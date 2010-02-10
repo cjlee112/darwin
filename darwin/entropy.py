@@ -140,7 +140,7 @@ def discrete_box_entropy(vectors, m):
         vectors = [mapping[v] for v in vectors]
     return box_entropy(vectors, m)
 
-def box_entropy(vectors, m):
+def box_entropy(vectors, m, sample=None):
     '''calculate differential entropy using specified number of points m
     vectors: sampled data points;
     m: number of nearest points to include in each density-sampling box'''
@@ -154,20 +154,29 @@ def box_entropy(vectors, m):
         a = a.reshape((n, 1))
     ndim = a.shape[1]
     rows = numpy.arange(n)
-    e1 = numpy.core.zeros((n))
-    e2 = numpy.core.zeros((n))
-    nm = numpy.core.zeros((n))
-    for i in range(n):
-        d = numpy.core.abs(a-a[i]) # GET DIFFERENCE VECTORS
+    if sample is None:
+        sample = a
+        nsample = n
+        discount = 1
+    else:
+        if not hasattr(sample, 'ndim'):
+            sample = numpy.core.array(sample)
+        nsample = len(sample)
+        discount = 0
+    e1 = numpy.core.zeros((nsample))
+    e2 = numpy.core.zeros((nsample))
+    nm = numpy.core.zeros((nsample))
+    for i in range(nsample):
+        d = numpy.core.abs(a - sample[i]) # GET DIFFERENCE VECTORS
         e = d[rows,numpy.argmax(d,1)] # GET LARGEST DIFFERENCE
         e.sort()
         for m2 in xrange(m,n): # ENSURE THAT VOLUME IS NOT ZERO...
             if e[m2]>0.: break
         e1[i] = e[m2-1]
         e2[i] = e[m2]
-        nm[i] = m2 - 1 # don't count center point -- unbiased calculation
+        nm[i] = m2 - discount # don't count self! unbiased calculation
     hvec = ndim*numpy.log(2.*e2) + numpy.log(0.5*((e1/e2)**ndim)+0.5) \
-           - numpy.log(nm/(n - 1))
+           - numpy.log(nm/(n - discount))
     return LogPVector(hvec)
 
 
