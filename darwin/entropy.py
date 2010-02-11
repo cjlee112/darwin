@@ -3,6 +3,8 @@ import numpy
 from math import log, pi, sqrt
 import random
 
+neginf = float('-inf') # standard constant
+
 def calc_dist(vectors):
     'calculate euclidean distance^2 for every vector pair'
     a = numpy.core.array(vectors)
@@ -140,7 +142,7 @@ def discrete_box_entropy(vectors, m):
         vectors = [mapping[v] for v in vectors]
     return box_entropy(vectors, m)
 
-def box_entropy(vectors, m, sample=None):
+def box_entropy(vectors, m, sample=None, uninformativeDensity=None):
     '''calculate differential entropy using specified number of points m
     vectors: sampled data points;
     m: number of nearest points to include in each density-sampling box'''
@@ -177,6 +179,8 @@ def box_entropy(vectors, m, sample=None):
         nm[i] = m2 - discount # don't count self! unbiased calculation
     hvec = ndim*numpy.log(2.*e2) + numpy.log(0.5*((e1/e2)**ndim)+0.5) \
            - numpy.log(nm/(n - discount))
+    if uninformativeDensity is not None: # enforce upper bound on hvec
+        numpy.clip(hvec, neginf, -log(uninformativeDensity), out=hvec)
     return LogPVector(hvec)
 
 
