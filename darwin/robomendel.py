@@ -46,7 +46,7 @@ class Multinomial(stats.rv_discrete):
             for x in obs:
                 try:
                     results.append(self.p_dict[x])
-                else:
+                except KeyError:
                     results.append(0)
             return results
         return self.p_seq[obs]
