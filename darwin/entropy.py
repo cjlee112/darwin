@@ -154,6 +154,9 @@ def box_entropy(vectors, m, sample=None, uninformativeDensity=None):
     else:
         a = vectors
     n = len(a)
+    if n == 0: # return uninformative density
+        return LogPVector(numpy.core.array([-log(uninformativeDensity)]
+                                           * len(sample)))
     if a.ndim == 1:
         a = a.reshape((n, 1))
     ndim = a.shape[1]
