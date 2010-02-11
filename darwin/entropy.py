@@ -101,7 +101,7 @@ class LogPVector(object):
     def __sub__(self, other):
         return SampleEstimator(self.sample -  other.sample)
 
-def He_discrete(vectors, sample=None, uninformativeDensity=None):
+def He_discrete(vectors, sample=None):
     '''Compute empirical entropy for discrete observations.
     vectors is used as the probability density;
     sample is used as the points for sampling the density;
@@ -126,8 +126,8 @@ def He_discrete(vectors, sample=None, uninformativeDensity=None):
                     addPseudoCounts = False
                 counts[obs] = 1 # +1 count for this unobserved category
                 total += 1.
-    for obs, n in counts.items(): # transform to logP
-        counts[obs] = log(n / total)
+    for obs, n in counts.items(): # transform to -logP
+        counts[obs] = log(total / n)
     return LogPVector(numpy.core.array([counts[obs] for obs in sample]))
 
 def discrete_box_entropy(vectors, m):
