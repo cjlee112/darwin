@@ -139,9 +139,9 @@ def discrete_box_entropy(vectors, m):
             if v not in mapping:
                 mapping[v] = count
                 count += 1
+        if count == 1: # single value = zero entropy
+            return LogPVector(numpy.core.array([0.]*len(vectors)))
         vectors = [mapping[v] for v in vectors]
-        if len(set(vectors)) == 1:
-            return LogPVector(1)
     return box_entropy(vectors, m)
 
 def box_entropy(vectors, m, sample=None, uninformativeDensity=None):
