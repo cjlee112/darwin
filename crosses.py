@@ -60,26 +60,3 @@ if __name__ == '__main__':
     #pylab.xlabel('delta')
     pylab.show()
 
-
-
-
-        # Progeny model Wh x Wh
-        #model = Multinomial({'yes': d, 'no': 1 - d})
-        #outcomes = ['no']*n
-
-        # Progeny model Wh x Pu
-        #model = Multinomial({'yes': 1 - d, 'no': d})
-        #outcomes = ['no']*n
-
-
-        ## Color model, Wh x Wh
-        #d = float(i) / float(steps)
-        #e = 1 - d
-        #n = 50
-        #model = Multinomial({'white': e 'purple': 1 - e})
-        #outcomes = ['white']*n
-        ##outcomes.append('purple')
-        ##outcomes = ['purple']*n
-        ##outcomes.append('white')
-        ##outcomes = ['purple']*n
-        ##outcomes.extend(['white']*n)
