@@ -80,14 +80,15 @@ class Node(object):
 
 
 class StartNode(Node):
-    def __init__(self, graph, obsGraphs):
-        obsTuple = tuple([g.get_start() for g in obsGraphs])
+    def __init__(self, graph, obsTuple=None, obsGraphs=None):
+        if obsTuple is None:
+            obsTuple = tuple([g.get_start() for g in obsGraphs])
         label = graph.get_start(obsTuple=obsTuple)
         Node.__init__(self, 'START', label)
 
 class StopNode(Node):
-    def __init__(self, graph):
-        Node.__init__(self, 'STOP', NodeLabel(graph, 'STOP', None))
+    def __init__(self, graph, obsTuple=None):
+        Node.__init__(self, 'STOP', NodeLabel(graph, 'STOP', obsTuple))
 
 class Label(object):
     '''Reference to a specific vertex in a graph'''
@@ -222,7 +223,7 @@ class NodeGraph(LabelGraph):
 
     def simulate_seq(self, n):
         'simulate markov chain of length n'
-        node = StartNode(self, (ObsSeqSimulator(None),))
+        node = StartNode(self, obsGraphs=(ObsSeqSimulator(None),))
         s = []
         obs = []
         for i in range(n):
@@ -254,7 +255,7 @@ class Model(object):
         this dependency group participate in.'''
         self.dependencyGraph = dependencyGraph
         self.clear()
-        self.start = StartNode(self.dependencyGraph, obsGraphs)
+        self.start = StartNode(self.dependencyGraph, obsGraphs=obsGraphs)
         self.stop = StopNode(self.dependencyGraph)
         self.compiledGraph = {}
         self.compiledGraphRev = {}
