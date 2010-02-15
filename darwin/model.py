@@ -40,11 +40,13 @@ class Node(object):
         self.state = state
         self.var = var
 
-    def get_children(self):
+    def get_children(self, fromNode=None):
         '''Get descendants in form {label:{node:pTransition}} '''
         results = None
+        if fromNode is None:
+            fromNode = self
         for varLabel, stateGraph in self.var.get_children().items():
-            d = stateGraph(self, varLabel)
+            d = stateGraph(fromNode, varLabel)
             try:
                 results.update(d)
             except AttributeError:
@@ -262,7 +264,7 @@ class Model(object):
         self.logPobsDict = {self.start:self.start.log_p_obs()}
         self.b = {}
         compile_graph(self.compiledGraph, self.compiledGraphRev,
-                      self.start, self.b, self.logPobsDict, logPmin)
+                      self.start, self.b, self.logPobsDict, logPmin, None)
 
     def clear(self):
         def del_if_found(attr):
@@ -427,12 +429,18 @@ class EmissionDict(dict):
                     break
         return obs
 
+def compile_subgraph(g, gRev, node, b, logPobsDict, logPmin):
+    start = StartNode(node.state.subgraph, obsTuple=node.var.obsTuple)
+    g[node] = ({start:1.},) # save edge from node to start of its subgraph
+    gRev.setdefault(start, {})[node] = 1.
+    node.stops = {} # for list of unique stop nodes in this subgraph
+    compile_graph(g, gRev, start, b, logPobsDict, logPmin, node) # subgraph
 
-def compile_graph(g, gRev, node, b, logPobsDict, logPmin):
+def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent):
     '''Generate complete traversal of variable / observation / state graphs
     and return forward graph in the form {src:[{dest:edge}]} and reverse
     graph in the form {dest:{src:edge}}.  In the forward form, each
-    source node has multiple subgraphs, one for each independent
+    source node has multiple target graphs, one for each independent
     target variable.
 
     Populates logPobsDict with the total log probability of the observations
@@ -440,28 +448,39 @@ def compile_graph(g, gRev, node, b, logPobsDict, logPmin):
     to enforce path termination at that point.
 
     logPmin enforces truncation of the path at low (or zero) probability
-    nodes.'''
-    targets = []
-    for label,sg in node.get_children().items(): # multiple dependencies multiply...
-        d = {}
-        for dest,edge in sg.items(): # multiple states sum...
-            try:
-                logPobs = logPobsDict[dest]
-            except KeyError:
-                if dest.state == 'STOP': # terminate the path
-                    b[dest] = logPobsDict[dest] = logPobs = 0.
-                    g[dest] = () # prevent recursion on dest
-                else:
+    nodes.
+
+    parent, if not None, must be node containing this subgraph'''
+    if hasattr(node.state, 'subgraph'):
+        compile_subgraph(g, gRev, node, b, logPobsDict, logPmin)
+        fromNodes = node.stops # generate edges from subgraph stop node(s)
+    else:
+        fromNodes = (node,) # generate edges from this node
+    for fromNode in fromNodes:
+        targets = []
+        for label,sg in node.get_children(fromNode).items(): # multiple dependencies multiply...
+            d = {}
+            for dest,edge in sg.items(): # multiple states sum...
+                try:
+                    logPobs = logPobsDict[dest]
+                except KeyError:
                     logPobsDict[dest] = logPobs = dest.log_p_obs()
-            if logPobs <= logPmin:
-                continue # truncate: do not recurse to dest
-            gRev.setdefault(dest, {})[node] = edge # save reverse graph
-            d[dest] = edge
-            if dest not in g: # subtree not already compiled, so recurse
-                compile_graph(g, gRev, dest, b, logPobsDict, logPmin)
-        if d: # non-empty set of forward edges
-            targets.append(d)
-    g[node] = targets # save forward graph, even if empty
+                    if dest.state == 'STOP': # terminate the path
+                        if parent is not None: # add to parent's stop-node list
+                            parent.stops[dest] = None
+                        else: # backwards probability of terminal node = 1
+                            b[dest] = 0.
+                        g[dest] = () # prevent recursion on dest
+                if logPobs <= logPmin:
+                    continue # truncate: do not recurse to dest
+                gRev.setdefault(dest, {})[fromNode] = edge # save reverse graph
+                d[dest] = edge
+                if dest not in g: # subtree not already compiled, so recurse
+                    compile_graph(g, gRev, dest, b, logPobsDict, logPmin,
+                                  parent)
+            if d: # non-empty set of forward edges
+                targets.append(d)
+        g[fromNode] = targets # save forward graph, even if empty
 
 def p_backwards(b, start, compiledGraph, logPobsDict):
     '''backwards probability algorithm
