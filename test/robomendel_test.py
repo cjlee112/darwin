@@ -14,8 +14,7 @@ def pheno1_test(modelWh, modelPu):
     prior = model.StateGraph({'START':{pstate:0.9, wstate:0.1}})
     stop = model.StopState()
     term = model.StateGraph({pstate:{stop:1.}, wstate:{stop:1.}})
-    dg = model.Model(model.NodeGraph({'START':{'chi':prior},
-                                      'chi':{'chi':term}}))
+    dg = model.NodeGraph({'START':{'chi':prior}, 'chi':{'chi':term}})
 
     d = {}
     for plant in range(2): # two white plants
@@ -24,15 +23,16 @@ def pheno1_test(modelWh, modelPu):
         d[plant] = modelPu.rvs(100)
     obsGraph = model.ObsGraph({'START':d})
 
-    logPobs = dg.calc_fb((obsGraph,))
-    llDict = dg.posterior_ll()
+    m = model.Model(dg, (obsGraph,))
+    logPobs = m.calc_fb()
+    llDict = m.posterior_ll()
 
     mixModel = get_mix_model(modelWh, modelPu)
 
     for plant in range(20):
         obs = d[plant]
         obsLabel = obsGraph.get_label(plant)
-        nodeLabel = dg.graph.get_label('chi', (obsLabel,))
+        nodeLabel = dg.get_label('chi', (obsLabel,))
         Le = entropy.LogPVector(numpy.array(llDict[nodeLabel]))
         LeMix = entropy.sample_Le(obs, mixModel)
         Ie = Le - LeMix
