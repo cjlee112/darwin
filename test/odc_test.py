@@ -13,19 +13,20 @@ def odc_test(p6=.5, n=100):
     sg = StateGraph({F:{F:0.95, L:0.05, stop:1.},
                      L:{F:0.1, L:0.9, stop:1.}})
     prior = StateGraph({'START':{F:2./3., L:1./3.}})
-    hmm = Model(NodeGraph({'theta':{'theta':sg}, 'START':{'theta':prior}}))
+    hmm = NodeGraph({'theta':{'theta':sg}, 'START':{'theta':prior}})
 
     s,obs = hmm.simulate_seq(n)
     obsGraph = ObsSequence(obs)
-    logPobs = hmm.calc_fb((obsGraph,))
-    llDict = hmm.posterior_ll()
+    m = Model(hmm, (obsGraph,))
+    logPobs = m.calc_fb()
+    llDict = m.posterior_ll()
     for i in range(n): # print posteriors
         obsLabel = obsGraph.get_label(i)
-        nodeLabel = hmm.graph.get_label('theta', (obsLabel,))
+        nodeLabel = hmm.get_label('theta', (obsLabel,))
         nodeF = Node(F, nodeLabel)
         nodeL = Node(L, nodeLabel)
         print '%s:%0.3f\t%s:%0.3f\tTRUE:%s,%d,%0.3f' % \
-              (nodeF, hmm.posterior(nodeF),
-               nodeL, hmm.posterior(nodeL),
+              (nodeF, m.posterior(nodeF),
+               nodeL, m.posterior(nodeL),
                s[i], obs[i], exp(llDict[nodeLabel][0]))
-    return hmm
+    return m

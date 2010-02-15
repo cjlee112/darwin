@@ -101,7 +101,7 @@ Generating simulated observations
 
 We first construct our HMM as a composite of these three state graphs::
 
-    >>> hmm = Model(NodeGraph({'theta':{'theta':sg}, 'START':{'theta':prior}}))
+    >>> hmm = NodeGraph({'theta':{'theta':sg}, 'START':{'theta':prior}})
 
 We have created a single variable labelled `theta` that follows
 the states and transitions specified by our state graph `sg`.  
@@ -125,13 +125,18 @@ of observations, we can just use the convenience class
 Bayesian inference on the HMM observations
 ------------------------------------------
 
+Finally, we construct a :class:`model.Model` object to compile the
+hmm and perform the calculations::
+
+    >>> m = Model(hmm)
+
 Inference on the possible hidden states is computed using the 
 *forward-backward algorithm*::
 
-    >>> logPobs = hmm.calc_fb((obsGraph,))
+    >>> logPobs = m.calc_fb((obsGraph,))
 
 This computes several things (stored as attributes on the
-`hmm` object, in log-probability format,
+`m` object, in log-probability format,
 as a dictionary whose keys are all possible hidden state values in
 the HMM):
 
@@ -170,7 +175,7 @@ possible hidden states that could have emitted this observation.
 
 We simply compute this from our HMM's forward probabilities::
 
-    >>> llDict = hmm.posterior_ll()
+    >>> llDict = m.posterior_ll()
 
 Printing out our results
 ------------------------
@@ -179,12 +184,12 @@ Let's just print out all our results::
 
     >>> for i in range(n): # print posteriors
     ...    obsLabel = obsGraph.get_label(i)
-    ...    nodeLabel = hmm.graph.get_label('theta', (obsLabel,))
+    ...    nodeLabel = hmm.get_label('theta', (obsLabel,))
     ...    nodeF = Node(F, nodeLabel)
     ...    nodeL = Node(L, nodeLabel)
     ...    print '%s:%0.3f\t%s:%0.3f\tTRUE:%s,%d,%0.3f' % \
-    ...          (nodeF, hmm.posterior(nodeF),
-    ...           nodeL, hmm.posterior(nodeL),
+    ...          (nodeF, m.posterior(nodeF),
+    ...           nodeL, m.posterior(nodeL),
     ...           s[i], obs[i], exp(llDict[nodeLabel][0]))
     ...
     <F: ('theta', (0,))>:0.931	<L: ('theta', (0,))>:0.069	TRUE:<F: ('theta', (0,))>,1,0.144
