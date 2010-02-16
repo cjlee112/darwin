@@ -410,10 +410,36 @@ class LinearStateStop(StopState):
         else:
             return {}
 
+class SeqMatchState(State):
+    def __init__(self, name, emission, match_f):
+        State.__init__(self, name, emission)
+        self.match_f = match_f
+
+    def __call__(self, fromNode, targetLabel, edge):
+        obsLabel = fromNode.var.obsTuple[0]
+        ipos = obsLabel.label + 1
+        if ipos < len(obsLabel.graph.seq):
+            s = self.match_f(obsLabel.graph.seq[ipos:])# run matcher
+            if s:
+                obsLabel = ObsLabel(obsLabel.graph, ipos + len(s) - 1, s)
+                newLabel = targetLabel.get_obs_label(obsLabel)
+                targetNode = Node(self, newLabel)
+                return {newLabel:{targetNode:edge}}
+            else:
+                return {}
+        else:
+            return {}
+
 class EmissionDict(dict):
     'state interface with arbitrary obs --> probability mapping'
     def pmf(self, obs):
-        return [self[o] for o in obs]
+        l = []
+        for o in obs:
+            try:
+                l.append(self[o])
+            except KeyError:
+                l.append(0.)
+        return l
     def __hash__(self):
         return id(self)
     def rvs(self, n):
@@ -430,11 +456,14 @@ class EmissionDict(dict):
         return obs
 
 def compile_subgraph(g, gRev, node, b, logPobsDict, logPmin):
-    start = StartNode(node.state.subgraph, obsTuple=node.var.obsTuple)
-    g[node] = ({start:1.},) # save edge from node to start of its subgraph
-    gRev.setdefault(start, {})[node] = 1.
     node.stops = {} # for list of unique stop nodes in this subgraph
-    compile_graph(g, gRev, start, b, logPobsDict, logPmin, node) # subgraph
+    d = {} # treat each subgraph as a possible destination state
+    for subgraph,edge in node.state.subgraphs.items():
+        start = StartNode(subgraph, obsTuple=node.var.obsTuple)
+        d[start] = edge # save edge from node to start of its subgraph
+        gRev.setdefault(start, {})[node] = edge
+        compile_graph(g, gRev, start, b, logPobsDict, logPmin, node) # subgraph
+    g[node] = (d,)
 
 def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent):
     '''Generate complete traversal of variable / observation / state graphs
@@ -451,7 +480,7 @@ def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent):
     nodes.
 
     parent, if not None, must be node containing this subgraph'''
-    if hasattr(node.state, 'subgraph'):
+    if hasattr(node.state, 'subgraphs'):
         compile_subgraph(g, gRev, node, b, logPobsDict, logPmin)
         fromNodes = node.stops # generate edges from subgraph stop node(s)
     else:
