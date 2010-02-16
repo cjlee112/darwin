@@ -296,6 +296,13 @@ class Model(object):
     def posterior_ll(self):
         return posterior_ll(self.f)
 
+    def save_graphviz(self, filename, **kwargs):
+        outfile = file(filename, 'w')
+        try:
+            save_graphviz(outfile, self.compiledGraph, self.posterior, **kwargs)
+        finally:
+            outfile.close()
+
 class BasicHMM(Model):
     '''Convenience subclass for creating a simple linear-traversal HMM
     given its state graph, priors, and termination edges.  Each of these
@@ -593,4 +600,27 @@ def posterior_ll(f):
         llDict[obsLabel] = [(logSum[iobs] - logSum[iobs - 1])
                             for iobs in range(1, nobs)]
     return llDict
+
+def save_graphviz(outfile, g, post_f=None, majorColor='red'):
+    '''generate dot file from graph g
+    post_f, if not None, must be function that returns posterior probability
+    of a node
+    majorColor is the color assigned to nodes with > 50% probability.'''
+    from gvgen import GvGen
+    gd = GvGen()
+    gNodes = {}
+    gClusters = {}
+    for node in g:
+        try:
+            parent = gClusters[node.var]
+        except KeyError:
+            parent = gClusters[node.var] = gd.newItem(str(node.var))
+        gNodes[node] = gd.newItem(str(node.state), parent)
+        if post_f and post_f(node) > 0.5:
+            gd.propertyAppend(gNodes[node], 'color', majorColor)
+    for node, dependencies in g.items():
+        for targets in dependencies:
+            for dest,edge in targets.items():
+                e = gd.newLink(gNodes[node], gNodes[dest])
+    gd.dot(outfile)
 

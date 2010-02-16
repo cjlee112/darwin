@@ -21,3 +21,4 @@ m = Model(hmm, (obsGraph,))
 
 logPobs = m.calc_fb()
 
+m.save_graphviz('test.dot')
