@@ -15,8 +15,8 @@ class REMatcher(object):
 
 class SimpleEmitter(object):
     def __init__(self, base):
-        self.base = base
+        self.frac = 1./base
 
     def pmf(self, obs):
         print 'SimpleEmitter: ', obs
-        return [pow(self.base, len(o)) for o in obs]
+        return [pow(self.frac, len(o)) for o in obs]

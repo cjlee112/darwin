@@ -40,13 +40,13 @@ class Node(object):
         self.state = state
         self.var = var
 
-    def get_children(self, fromNode=None):
+    def get_children(self, fromNode=None, parent=None):
         '''Get descendants in form {label:{node:pTransition}} '''
         results = None
         if fromNode is None:
             fromNode = self
         for varLabel, stateGraph in self.var.get_children().items():
-            d = stateGraph(fromNode, varLabel)
+            d = stateGraph(fromNode, varLabel, state=self.state, parent=parent)
             try:
                 results.update(d)
             except AttributeError:
@@ -82,15 +82,15 @@ class Node(object):
 
 
 class StartNode(Node):
-    def __init__(self, graph, obsTuple=None, obsGraphs=None):
+    def __init__(self, graph, obsTuple=None, obsGraphs=None, parent=None):
         if obsTuple is None:
             obsTuple = tuple([g.get_start() for g in obsGraphs])
-        label = graph.get_start(obsTuple=obsTuple)
+        label = graph.get_start(obsTuple=obsTuple, parent=parent)
         Node.__init__(self, 'START', label)
 
 class StopNode(Node):
-    def __init__(self, graph, obsTuple=None):
-        Node.__init__(self, 'STOP', NodeLabel(graph, 'STOP', obsTuple))
+    def __init__(self, graph, obsTuple=None, parent=None):
+        Node.__init__(self, 'STOP', NodeLabel(graph, 'STOP', obsTuple, parent))
 
 class Label(object):
     '''Reference to a specific vertex in a graph'''
@@ -120,22 +120,25 @@ class ObsLabel(Label):
     pass
 
 class NodeLabel(Label):
-    def __init__(self, graph, label, obsTuple=None):
+    def __init__(self, graph, label, obsTuple=None, parent=None):
         self.graph = graph
         self.label = label
         self.obsTuple = obsTuple
+        self.parent = parent
     def __hash__(self):
-        return hash((self.graph, self.label, self.obsTuple))
+        return hash((self.graph, self.label, self.obsTuple, id(self.parent)))
     def __cmp__(self, other):
         try:
-            return cmp((self.graph, self.label, self.obsTuple),
-                       (other.graph, other.label, other.obsTuple))
+            return cmp((self.graph, self.label, self.obsTuple, id(self.parent)),
+                  (other.graph, other.label, other.obsTuple, id(other.parent)))
         except AttributeError:
             return cmp(id(self), id(other))
     def __repr__(self):
         return str((self.label, self.obsTuple))
-    def get_obs_label(self, obsID):
-        return self.__class__(self.graph, self.label, (obsID,))
+    def get_obs_label(self, obsID, parent=None):
+        if parent is None:
+            parent = self.parent
+        return self.__class__(self.graph, self.label, (obsID,), parent)
 
 class LabelGraph(object):
     labelClass = Label
@@ -287,7 +290,10 @@ class Model(object):
 
     def posterior(self, node, asLog=False):
         'get posterior probability for the specified node'
-        logP = self.fsub[node] + self.b[node] - self.logPobs
+        try:
+            logP = self.fsub[node] + self.b[node] - self.logPobs
+        except KeyError: # some nodes have no path to stop, so inaccessible
+            logP = neginf
         if asLog:
             return logP
         else:
@@ -325,11 +331,13 @@ class StateGraph(UserDict.DictMixin):
         '''graph supplies the allowed state-state transitions and probabilities'''
         self.graph = graph
 
-    def __call__(self, fromNode, targetLabel):
+    def __call__(self, fromNode, targetLabel, state=None, parent=None):
         '''return dict of {label:{node:pTransition}} from fromNode'''
         results = {}
-        for dest,edge in self.graph[fromNode.state].items():
-            for k,v in dest(fromNode, targetLabel, edge).items():
+        if state is None:
+            state = fromNode.state
+        for dest,edge in self.graph[state].items():
+            for k,v in dest(fromNode, targetLabel, edge, parent).items():
                 try:
                     results[k].update(v)
                 except KeyError:
@@ -360,14 +368,14 @@ class State(object):
         self.emission = emission
         self.name = name
 
-    def __call__(self, fromNode, targetLabel, edge):
+    def __call__(self, fromNode, targetLabel, edge, parent):
         '''default move operator just echoes the obs graph branches'''
         results = {}
         obsPaths = fromNode.var.obsTuple[0]. \
                    get_children(fromNode=fromNode, targetLabel=targetLabel,
                                 state=self)
         for obsLabel in obsPaths:
-            newLabel = targetLabel.get_obs_label(obsLabel)
+            newLabel = targetLabel.get_obs_label(obsLabel, parent)
             targetNode = Node(self, newLabel)
             results.setdefault(newLabel, {})[targetNode] = edge
         return results
@@ -402,18 +410,31 @@ class LinearState(State):
     '''Models a state in a linear chain '''
     pass
 
+class SilentState(State):
+    def __init__(self, name):
+        self.name = name
+
+    def __call__(self, fromNode, targetLabel, edge, parent):
+        targetLabel = NodeLabel(targetLabel.graph, targetLabel.label,
+                                fromNode.var.obsTuple, parent)
+        return {targetLabel:{Node(self, targetLabel):edge}}
+
+    def get_ll_dict(self, node):
+        return {}
+
 class StopState(State):
     def __init__(self):
         State.__init__(self, 'STOP', None)
-    def __call__(self, fromNode, targetLabel, edge):
-        return {'STOP':{StopNode(targetLabel.graph):edge}}
+    def __call__(self, fromNode, targetLabel, edge, parent):
+        return {'STOP':{StopNode(targetLabel.graph, fromNode.var.obsTuple,
+                                 parent):edge}}
         
 class LinearStateStop(StopState):
-    def __call__(self, fromNode, targetLabel, edge):
+    def __call__(self, fromNode, targetLabel, edge, parent):
         '''Only return STOP node if at the end of the obs set '''
-        if not State.__call__(self, fromNode, targetLabel, edge):
+        if not State.__call__(self, fromNode, targetLabel, edge, parent):
             # exhausted obs, so transition to STOP
-            return StopState.__call__(self, fromNode, targetLabel, edge)
+            return {'STOP':{StopNode(targetLabel.graph, None, parent):edge}}
         else:
             return {}
 
@@ -422,14 +443,14 @@ class SeqMatchState(State):
         State.__init__(self, name, emission)
         self.match_f = match_f
 
-    def __call__(self, fromNode, targetLabel, edge):
+    def __call__(self, fromNode, targetLabel, edge, parent):
         obsLabel = fromNode.var.obsTuple[0]
         ipos = obsLabel.label + 1
         if ipos < len(obsLabel.graph.seq):
             s = self.match_f(obsLabel.graph.seq[ipos:])# run matcher
             if s:
                 obsLabel = ObsLabel(obsLabel.graph, ipos + len(s) - 1, s)
-                newLabel = targetLabel.get_obs_label(obsLabel)
+                newLabel = targetLabel.get_obs_label(obsLabel, parent)
                 targetNode = Node(self, newLabel)
                 return {newLabel:{targetNode:edge}}
             else:
@@ -463,14 +484,14 @@ class EmissionDict(dict):
         return obs
 
 def compile_subgraph(g, gRev, node, b, logPobsDict, logPmin):
+    'recurse to subgraph of this node; creates node.stops as list of endnodes'
     node.stops = {} # for list of unique stop nodes in this subgraph
-    d = {} # treat each subgraph as a possible destination state
-    for subgraph,edge in node.state.subgraphs.items():
-        start = StartNode(subgraph, obsTuple=node.var.obsTuple)
-        d[start] = edge # save edge from node to start of its subgraph
-        gRev.setdefault(start, {})[node] = edge
-        compile_graph(g, gRev, start, b, logPobsDict, logPmin, node) # subgraph
-    g[node] = (d,)
+    start = StartNode(node.state.subgraph, obsTuple=node.var.obsTuple,
+                      parent=node)
+    logPobsDict[start] = 0.
+    g[node] = ({start:1.},) # save edge from node to start of its subgraph
+    gRev.setdefault(start, {})[node] = 1.
+    compile_graph(g, gRev, start, b, logPobsDict, logPmin, node) # subgraph
 
 def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent):
     '''Generate complete traversal of variable / observation / state graphs
@@ -487,14 +508,14 @@ def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent):
     nodes.
 
     parent, if not None, must be node containing this subgraph'''
-    if hasattr(node.state, 'subgraphs'):
+    if hasattr(node.state, 'subgraph'):
         compile_subgraph(g, gRev, node, b, logPobsDict, logPmin)
         fromNodes = node.stops # generate edges from subgraph stop node(s)
     else:
         fromNodes = (node,) # generate edges from this node
     for fromNode in fromNodes:
         targets = []
-        for label,sg in node.get_children(fromNode).items(): # multiple dependencies multiply...
+        for label,sg in node.get_children(fromNode, parent).items():
             d = {}
             for dest,edge in sg.items(): # multiple states sum...
                 try:
@@ -601,7 +622,8 @@ def posterior_ll(f):
                             for iobs in range(1, nobs)]
     return llDict
 
-def save_graphviz(outfile, g, post_f=None, majorColor='red'):
+def save_graphviz(outfile, g, post_f=None, majorColor='red',
+                  label_f=lambda x:str(x.state)):
     '''generate dot file from graph g
     post_f, if not None, must be function that returns posterior probability
     of a node
@@ -615,7 +637,7 @@ def save_graphviz(outfile, g, post_f=None, majorColor='red'):
             parent = gClusters[node.var]
         except KeyError:
             parent = gClusters[node.var] = gd.newItem(str(node.var))
-        gNodes[node] = gd.newItem(str(node.state), parent)
+        gNodes[node] = gd.newItem(label_f(node), parent)
         if post_f and post_f(node) > 0.5:
             gd.propertyAppend(gNodes[node], 'color', majorColor)
     for node, dependencies in g.items():
