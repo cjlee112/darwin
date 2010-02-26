@@ -167,10 +167,10 @@ def compute_im_continuous(outcomes, model, prior):
 
 def progeny_model(d, cross=None):
     if cross == 'Pu':
-        model = Multinomial({'y': 1-d, 'n': d})
-    else:
-        model = Multinomial({'y': 1, 'n': 0})
-    return model
+        return Multinomial({'y': 1-d, 'n': d})
+    if cross == 'Wh':
+        return Multinomial({'y': 1, 'n': 0})
+    return None
 
 def color_model(e, w):
     modelPu = stats.norm(10, 1)
@@ -178,7 +178,7 @@ def color_model(e, w):
     modelMix = darwin.mixture.Mixture(((1-e*w, modelPu), (e*w, modelWh)))
     return modelMix
 
-def robomendel_wh_pu_crosses(n, d, e, w, offspring, outcomes, cross='Wh'):
+def robomendel_wh_pu_crosses(n, d, e, w, outcomes, cross='Wh'):
     """Cross: 'Wh' for Wh x Wh, 'Pu' for Wh x Pu"""
 
     # Progeny experiment, compute im ip ie
@@ -186,7 +186,7 @@ def robomendel_wh_pu_crosses(n, d, e, w, offspring, outcomes, cross='Wh'):
     model = progeny_model(d, cross)
 
     offspring_obs = []
-    for off in offspring:
+    for off in outcomes:
         if off is not None:
             offspring_obs.append('y')
         else:
@@ -195,15 +195,15 @@ def robomendel_wh_pu_crosses(n, d, e, w, offspring, outcomes, cross='Wh'):
     i_m = compute_im_discrete(offspring_obs, model, prior)
     i_p = compute_ip_discrete(offspring_obs, model)
 
-    print "Progeny observation"
-    print "Im: %s, Ip: %s" % (i_m.mean, i_p.mean)
+    print "  Progeny observation"
+    print "  Im: %s, Ip: %s" % (i_m.mean, i_p.mean)
 
-    offspring = [x for x in offspring if x]
+    offspring = [x for x in outcomes if x is not None]
     if len(offspring) != n:
         print "%s offspring are dead" % (n - len(offspring),)
 
     if not offspring:
-        print "All progeny dead, no color observations"
+        print "  All progeny dead, no color observations"
         return
 
     color_obs = [p.rvs()[0] for p in offspring]
@@ -214,9 +214,8 @@ def robomendel_wh_pu_crosses(n, d, e, w, offspring, outcomes, cross='Wh'):
     i_m = compute_im_continuous(color_obs, model, prior)
     i_p = compute_ip_continuous(color_obs, model)
 
-    print "Color observation"
-    print "Im: %s, Ip: %s" % (i_m.mean, i_p.mean)
-
+    print "  Color observation"
+    print "  Im: %s, Ip: %s" % (i_m.mean, i_p.mean)
 
 
 def main():
@@ -228,7 +227,9 @@ def main():
 
     n = 50
     (d, e, w) = (0.8, 0.2, 0.1)
+    print "Experiment parameters"
     print "d: %s, e: %s, w: %s" % (d,e,w)
+    print ""
 
     white_plant = PeaPlant(genome=PeaPlant.white_genome)
     purple_plant = PeaPlant(genome=PeaPlant.purple_genome)
@@ -238,14 +239,14 @@ def main():
     offspring.extend([white_plant]*(int(w*n)))
     test_outcomes.append(offspring)
 
-    offspring = [white_plant * purple_plant for i in range(n)]
+    #offspring = [white_plant * purple_plant for i in range(n)]
 
     for outcomes in test_outcomes:
         print "Test Outcomes", multiset(outcomes)
         print "Wh x Wh"
-        robomendel_wh_pu_crosses(n, d, e, w, offspring, outcomes, cross='Wh')
+        robomendel_wh_pu_crosses(n, d, e, w, outcomes, cross='Wh')
         print "Wh x Pu"
-        robomendel_wh_pu_crosses(n, d, e, w, offspring, outcomes, cross='Pu')
+        robomendel_wh_pu_crosses(n, d, e, w, outcomes, cross='Pu')
         print ""
 
 if __name__ == '__main__':
