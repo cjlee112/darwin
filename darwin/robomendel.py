@@ -99,3 +99,6 @@ class PeaPlant(object):
         """Observe n times."""
         return self.genome.get_phenotypes()[0].rvs(n)
 
+    def __repr__(self):
+        return determine_color(self)
+
