@@ -187,7 +187,7 @@ def color_model(d, e, w, cross):
 
 def robomendel_wh_pu_crosses(n, d, e, w, outcomes, cross):
     # Progeny experiment, compute im ip ie
-    prior = numpy.array([math.log(0.5)]*n)
+    #prior = numpy.array([math.log(0.5)]*n)
     prior = Multinomial({'y': 0.5, 'n': 0.5})
     model = progeny_model(d, cross)
 
@@ -270,7 +270,7 @@ def main():
     hybrid_plant = white_plant * purple_plant
     test_outcomes = [hybrid_plant * hybrid_plant for i in range(n)]
     model = Multinomial({'y': h, 'n': 1-h})
-    prior = numpy.array([math.log(0.5)]*n)
+    #prior = numpy.array([math.log(0.5)]*n)
 
     prior = Multinomial({'y': 0.5, 'n': 0.5})
 
@@ -284,9 +284,9 @@ def main():
     i_m = compute_im_discrete(offspring_obs, model, prior)
     i_p = compute_ip_discrete(offspring_obs, model)
 
-    print "Hybrid progeny experiment"
+    print "  -- Hybrid progeny experiment --"
     print "  probability of fertile hybrid:", h
-    print "  -- Hybrid progeny observation --"
+    print "  Hybrid progeny observation"
     print "  Im: %s, Ip: %s" % (i_m.mean, i_p.mean)
 
     #offspring = [x for x in outcomes if x is not None]
@@ -347,6 +347,11 @@ def main():
         print "    Im: %s, Ip: %s" % (i_m.mean, i_p.mean)
 
     # Hypothesize model for table, identifying plants as Wh, Pu, or Hy via self-fertilization
+
+    ## Idealized model
+    #table_models = {('Pu', 'Pu'): Multinomial( {'Pu': 1, 'Wh': 0, 'Hy': 0}), ('Pu', 'Wh'): Multinomial( {'Pu': 0, 'Wh': 0, 'Hy': 1}), ('Pu', 'Hy'): Multinomial( {'Pu': 0.5, 'Wh': 0, 'Hy': 0.5}), ('Hy', 'Hy'): Multinomial( {'Pu': 0.25, 'Wh': 0.25, 'Hy': 0.5}), ('Hy', 'Wh'): Multinomial( {'Pu': 0, 'Wh': 0.5, 'Hy': 0.5})}
+
+    # Trained model
     types = ['Pu', 'Hy', 'Wh']
     self_cross_models = dict()
     for t in types:
@@ -365,9 +370,6 @@ def main():
             im_list.append((i_m.mean, t))
         im_list.sort()
         return im_list[-1][1]
-
-    ## Idealized model
-    #table_models = {('Pu', 'Pu'): Multinomial( {'Pu': 1, 'Wh': 0, 'Hy': 0}), ('Pu', 'Wh'): Multinomial( {'Pu': 0, 'Wh': 0, 'Hy': 1}), ('Pu', 'Hy'): Multinomial( {'Pu': 0.5, 'Wh': 0, 'Hy': 0.5}), ('Hy', 'Hy'): Multinomial( {'Pu': 0.25, 'Wh': 0.25, 'Hy': 0.5}), ('Hy', 'Wh'): Multinomial( {'Pu': 0, 'Wh': 0.5, 'Hy': 0.5})}
 
     print "  -- Training cross type models --"
     table_models = dict()
