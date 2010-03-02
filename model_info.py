@@ -166,21 +166,22 @@ def compute_im_continuous(outcomes, model, prior):
     return i_m
 
 def progeny_model(d, cross=None):
-    if cross == 'Pu':
+    if cross in [('Pu', 'Wh'), ('Wh', 'Pu')]:
         return Multinomial({'y': 1-d, 'n': d})
-    if cross == 'Wh':
+    if cross in [('Wh', 'Wh'), ('Pu', 'Pu')]:
         return Multinomial({'y': 1, 'n': 0})
     return None
 
-def color_model(e, w):
+def color_model(d, e, w, cross):
     modelPu = stats.norm(10, 1)
     modelWh = stats.norm(0, 1)
-    modelMix = darwin.mixture.Mixture(((1-e*w, modelPu), (e*w, modelWh)))
+    if cross in [('Pu', 'Wh'), ('Wh', 'Pu'), ('Pu', 'Pu')]:
+        modelMix = darwin.mixture.Mixture(((e*w, modelWh), (1-e*w, modelPu)))
+    if cross in [('Wh', 'Wh')]:
+        modelMix = darwin.mixture.Mixture(((d + (1-d)*(e*w), modelWh), ((1-d)*(1-e*w), modelPu)))
     return modelMix
 
-def robomendel_wh_pu_crosses(n, d, e, w, outcomes, cross='Wh'):
-    """Cross: 'Wh' for Wh x Wh, 'Pu' for Wh x Pu"""
-
+def robomendel_wh_pu_crosses(n, d, e, w, outcomes, cross):
     # Progeny experiment, compute im ip ie
     prior = numpy.array([math.log(0.5)]*n)
     model = progeny_model(d, cross)
@@ -209,7 +210,7 @@ def robomendel_wh_pu_crosses(n, d, e, w, outcomes, cross='Wh'):
     color_obs = [p.rvs()[0] for p in offspring]
     # Color experiment, compute im ip ie
     # prior is uniform over color detector range
-    model = color_model(e, w)
+    model = color_model(d, e, w, cross)
     prior = stats.uniform(-10, 30) # [-10, 20]
     i_m = compute_im_continuous(color_obs, model, prior)
     i_p = compute_ip_continuous(color_obs, model)
@@ -226,7 +227,7 @@ def main():
     w == probability of white flowers from environmental effect """
 
     n = 50
-    (d, e, w) = (0.8, 0.2, 0.1)
+    (d, e, w) = (0.2, 0.8, 0.1)
     print "Experiment parameters"
     print "d: %s, e: %s, w: %s" % (d,e,w)
     print ""
@@ -234,9 +235,16 @@ def main():
     white_plant = PeaPlant(genome=PeaPlant.white_genome)
     purple_plant = PeaPlant(genome=PeaPlant.purple_genome)
 
+    lavender_plant = PeaPlant(genome=PeaPlant.lavender_genome)
+
     test_outcomes = [ [None]*n, [white_plant]*n, [purple_plant]*n ]
     offspring = [purple_plant]*(int((1-w)*n))
     offspring.extend([white_plant]*(int(w*n)))
+    test_outcomes.append(offspring)
+    test_outcomes.append([lavender_plant]*n)
+
+    offspring = [purple_plant]*(int(n / 2))
+    offspring.extend([white_plant]*(int(n / 2)))
     test_outcomes.append(offspring)
 
     #offspring = [white_plant * purple_plant for i in range(n)]
@@ -244,9 +252,11 @@ def main():
     for outcomes in test_outcomes:
         print "Test Outcomes", multiset(outcomes)
         print "Wh x Wh"
-        robomendel_wh_pu_crosses(n, d, e, w, outcomes, cross='Wh')
+        robomendel_wh_pu_crosses(n, d, e, w, outcomes, cross=('Pu', 'Wh'))
         print "Wh x Pu"
-        robomendel_wh_pu_crosses(n, d, e, w, outcomes, cross='Pu')
+        robomendel_wh_pu_crosses(n, d, e, w, outcomes, cross=('Wh', 'Wh'))
+        print "Pu x Pu"
+        robomendel_wh_pu_crosses(n, d, e, w, outcomes, cross=('Pu', 'Pu'))
         print ""
 
 if __name__ == '__main__':

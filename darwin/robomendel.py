@@ -65,8 +65,10 @@ def multiset(list_):
 def determine_color(plant):
     obs = plant.rvs(20)
     mean = numpy.average(obs)
-    if mean > 5:
+    if mean > 8:
         return 'purple'
+    if mean > 4:
+        return 'lavender'
     return 'white'
 
 # to construct a homozygous purple plant, use
@@ -79,6 +81,10 @@ class PeaPlant(object):
     purple_chromosome = Chromosome([(0.5, purple_allele)])
     white_genome = DiploidGenome({1:(white_chromosome, white_chromosome)})
     purple_genome = DiploidGenome({1:(purple_chromosome, purple_chromosome)})
+
+    lavender_allele = DominantAllele("la", stats.norm(5,1))
+    lavender_chromosome = Chromosome([(0.5, lavender_allele)])
+    lavender_genome = DiploidGenome({1:(lavender_chromosome, lavender_chromosome)})
 
     def __init__(self, name=None, genome=None):
         if genome is None:
