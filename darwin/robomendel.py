@@ -41,7 +41,7 @@ class Multinomial(stats.rv_discrete):
         return obs
 
     def pmf(self, obs):
-        if hasattr(obs,"__iter__"):
+        if hasattr(obs, "__iter__"):
             results = []
             for x in obs:
                 try:
@@ -51,6 +51,8 @@ class Multinomial(stats.rv_discrete):
             return results
         return self.p_seq[obs]
 
+    def __repr__(self):
+        return 'Multinomial(%s)' % self.p_dict
 
 def multiset(list_):
     """Returns a multiset (a dictionary) from the input iterable list_."""

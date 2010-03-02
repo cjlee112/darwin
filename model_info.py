@@ -9,7 +9,7 @@ import pylab
 from darwin.robomendel import *
 from darwin.entropy import *
 import darwin.mixture
-
+from darwin.mixture import Mixture
 
 def plot_im_ip_bernoulli():
     n = 100
@@ -154,7 +154,8 @@ def compute_ip_continuous(outcomes, model):
 
 def compute_im_discrete(outcomes, model, prior):
     l_e = discrete_sample_Le(outcomes, model)
-    log_prior = LogPVector(prior)
+    log_prior = discrete_sample_Le(outcomes, prior)
+    #log_prior = LogPVector(prior)
     i_m = l_e - log_prior
     return i_m
 
@@ -187,6 +188,7 @@ def color_model(d, e, w, cross):
 def robomendel_wh_pu_crosses(n, d, e, w, outcomes, cross):
     # Progeny experiment, compute im ip ie
     prior = numpy.array([math.log(0.5)]*n)
+    prior = Multinomial({'y': 0.5, 'n': 0.5})
     model = progeny_model(d, cross)
 
     offspring_obs = []
@@ -223,44 +225,185 @@ def robomendel_wh_pu_crosses(n, d, e, w, outcomes, cross):
 
 
 def main():
-    """ Experimental parameters
-    n == sample size
-    d == probability that Wh is a different species
-    e == probability that white color is an environmental effect
-    w == probability of white flowers from environmental effect """
-
-    n = 50
-    (d, e, w) = (0.2, 0.8, 0.1)
-    print "Experiment parameters"
-    print "d: %s, e: %s, w: %s" % (d,e,w)
-    print ""
+    #""" Experimental parameters
+    #n == sample size
+    #d == probability that Wh is a different species
+    #e == probability that white color is an environmental effect
+    #w == probability of white flowers from environmental effect """
 
     white_plant = PeaPlant(genome=PeaPlant.white_genome)
     purple_plant = PeaPlant(genome=PeaPlant.purple_genome)
-
     lavender_plant = PeaPlant(genome=PeaPlant.lavender_genome)
 
-    test_outcomes = [ [None]*n, [white_plant]*n, [purple_plant]*n ]
-    offspring = [purple_plant]*(int((1-w)*n))
-    offspring.extend([white_plant]*(int(w*n)))
-    test_outcomes.append(offspring)
-    test_outcomes.append([lavender_plant]*n)
+    ## Is Wh a different species?
 
-    offspring = [purple_plant]*(int(n / 2))
-    offspring.extend([white_plant]*(int(n / 2)))
-    test_outcomes.append(offspring)
+    #n = 50
+    #(d, e, w) = (0.2, 0.8, 0.1)
+    #print "Experiment parameters"
+    #print "d: %s, e: %s, w: %s" % (d,e,w)
+    #print ""
 
-    #offspring = [white_plant * purple_plant for i in range(n)]
+    #test_outcomes = [ [None]*n, [white_plant]*n, [purple_plant]*n ]
+    #offspring = [purple_plant]*(int((1-w)*n))
+    #offspring.extend([white_plant]*(int(w*n)))
+    #test_outcomes.append(offspring)
+    #test_outcomes.append([lavender_plant]*n)
 
-    for outcomes in test_outcomes:
-        print "Test Outcomes", multiset(outcomes)
-        print "Wh x Wh"
-        robomendel_wh_pu_crosses(n, d, e, w, outcomes, cross=('Pu', 'Wh'))
-        print "Wh x Pu"
-        robomendel_wh_pu_crosses(n, d, e, w, outcomes, cross=('Wh', 'Wh'))
-        print "Pu x Pu"
-        robomendel_wh_pu_crosses(n, d, e, w, outcomes, cross=('Pu', 'Pu'))
-        print ""
+    #offspring = [purple_plant]*(int(n / 2))
+    #offspring.extend([white_plant]*(int(n / 2)))
+    #test_outcomes.append(offspring)
+
+    #for outcomes in test_outcomes:
+        #print "Test Outcomes", multiset(outcomes)
+        #print "Wh x Wh"
+        #robomendel_wh_pu_crosses(n, d, e, w, outcomes, cross=('Pu', 'Wh'))
+        #print "Wh x Pu"
+        #robomendel_wh_pu_crosses(n, d, e, w, outcomes, cross=('Wh', 'Wh'))
+        #print "Pu x Pu"
+        #robomendel_wh_pu_crosses(n, d, e, w, outcomes, cross=('Pu', 'Pu'))
+        #print ""
+
+    # Hybrid Cross experiment
+    # h == probability that Wh and Pu produce a sterile hybrid
+    n = 50
+    h = 0.1
+    hybrid_plant = white_plant * purple_plant
+    test_outcomes = [hybrid_plant * hybrid_plant for i in range(n)]
+    model = Multinomial({'y': h, 'n': 1-h})
+    prior = numpy.array([math.log(0.5)]*n)
+
+    prior = Multinomial({'y': 0.5, 'n': 0.5})
+
+    offspring_obs = []
+    for off in test_outcomes:
+        if (off * off) is not None:
+            offspring_obs.append('y')
+        else:
+            offspring_obs.append('n')
+
+    i_m = compute_im_discrete(offspring_obs, model, prior)
+    i_p = compute_ip_discrete(offspring_obs, model)
+
+    print "Hybrid progeny experiment"
+    print "  probability of fertile hybrid:", h
+    print "  -- Hybrid progeny observation --"
+    print "  Im: %s, Ip: %s" % (i_m.mean, i_p.mean)
+
+    #offspring = [x for x in outcomes if x is not None]
+    #if not offspring:
+        #print "  All progeny dead, no color observations"
+        #return
+    #if len(offspring) != n:
+        #print "%s offspring are dead" % (n - len(offspring),)
+    
+    # Now we've got fertile hybrids, so let's perform all the possible crosses and record the color counts
+    n = 200
+    plant_map = {'Wh': white_plant, 'Pu': purple_plant, 'Hy': hybrid_plant }
+    test_crosses = [('Pu', 'Hy'), ('Wh', 'Hy'), ('Hy', 'Hy')]
+    print "  -- Hybrid Cross Colors --"
+    for (a, b) in test_crosses:
+        plant_1 = plant_map[a]
+        plant_2 = plant_map[b]
+        offspring = [plant_1 * plant_2 for i in range(n)]
+        print '  Cross:', a, ' x ', b, multiset(map(determine_color, offspring))
+
+    # Hypothesize model for cross table color
+    modelPu = stats.norm(10, 1)
+    modelWh = stats.norm(0, 1)
+    
+    ## Idealized model
+    #table_models = {('Pu', 'Pu'): modelPu, ('Pu', 'Wh'): modelPu, ('Pu', 'Hy'): modelPu, ('Hy', 'Hy'): Mixture(((0.25, modelWh), (0.75, modelPu))), ('Hy', 'Wh'): Mixture(((0.5, modelWh), (0.5, modelPu)))}
+    
+    ## Trained model
+    table_models = dict()
+    cross_pairs = [('Pu', 'Hy'), ('Hy', 'Hy'), ('Pu', 'Pu'), ('Hy', 'Wh'), ('Pu', 'Wh'), ('Wh', 'Wh')]
+    n = 200
+    models_map = {'purple': modelPu, 'white': modelWh}
+    print "  -- Training cross color models --"
+    for (a, b) in cross_pairs:
+        plant_1 = plant_map[a]
+        plant_2 = plant_map[b]
+        offspring = [plant_1 * plant_2 for i in range(n)]
+        mset = multiset(map(determine_color, offspring))
+        mixture_tuples = []
+        for key in mset.keys():
+            mixture_tuples.append((float(mset[key]) / n, models_map[key]))
+        print '  Cross:', a, ' x ', b, mset
+        table_models[(a,b)] = Mixture(tuple(mixture_tuples))
+    
+    print "  -- Table Color Crosses --"
+    for k,v in table_models.items():
+        (a, b) = k
+        model = v
+        plant_1 = plant_map[a]
+        plant_2 = plant_map[b]
+        offspring = [plant_1 * plant_2 for i in range(n)]
+        print '  Cross:', a, ' x ', b, multiset(map(determine_color, offspring))
+        color_obs = [p.rvs()[0] for p in offspring]
+        prior = stats.uniform(-10, 30) # [-10, 20]
+        i_m = compute_im_continuous(color_obs, model, prior)
+        i_p = compute_ip_continuous(color_obs, model)
+        print "    Color observation"
+        print "    Im: %s, Ip: %s" % (i_m.mean, i_p.mean)
+
+    # Hypothesize model for table, identifying plants as Wh, Pu, or Hy via self-fertilization
+    types = ['Pu', 'Hy', 'Wh']
+    self_cross_models = dict()
+    for t in types:
+        self_cross_models[t] = table_models[(t,t)]
+
+    def determine_type(plant, self_cross_models=self_cross_models, n=50):
+        """For plant, self-fertilize and determine which model for 'Wh', 'Hy', or 'Pu' has the largest model information."""
+        offspring = [plant * plant for i in range(n)]
+        color_obs = [p.rvs()[0] for p in offspring]
+        types = ['Pu', 'Hy', 'Wh']
+        im_list = []
+        prior = stats.uniform(-10, 30)
+        for t in types:
+            model = self_cross_models[t]
+            i_m = compute_im_continuous(color_obs, model, prior)
+            im_list.append((i_m.mean, t))
+        im_list.sort()
+        return im_list[-1][1]
+
+    ## Idealized model
+    #table_models = {('Pu', 'Pu'): Multinomial( {'Pu': 1, 'Wh': 0, 'Hy': 0}), ('Pu', 'Wh'): Multinomial( {'Pu': 0, 'Wh': 0, 'Hy': 1}), ('Pu', 'Hy'): Multinomial( {'Pu': 0.5, 'Wh': 0, 'Hy': 0.5}), ('Hy', 'Hy'): Multinomial( {'Pu': 0.25, 'Wh': 0.25, 'Hy': 0.5}), ('Hy', 'Wh'): Multinomial( {'Pu': 0, 'Wh': 0.5, 'Hy': 0.5})}
+
+    print "  -- Training cross type models --"
+    table_models = dict()
+    for (a, b) in cross_pairs:
+        plant_1 = plant_map[a]
+        plant_2 = plant_map[b]
+        offspring = [plant_1 * plant_2 for i in range(n)]
+        mset = multiset(map(determine_type, offspring))
+        multi_dict = dict()
+        for key in mset.keys():
+            multi_dict[key] = float(mset[key]) / n
+        table_models[(a,b)] = Multinomial(multi_dict)
+        print '  Cross:', a, ' x ', b, mset
+    
+    print "  -- Table Type Crosses --"
+    for k,v in table_models.items():
+        (a, b) = k
+        model = v
+        plant_1 = plant_map[a]
+        plant_2 = plant_map[b]
+        offspring = [plant_1 * plant_2 for i in range(n)]
+        offspring_obs = map(determine_type, offspring)
+        mset = multiset(offspring_obs)
+        prior_dict = dict()
+        # Uniformative prior on observed types
+        #for key in mset.keys():
+            #prior_dict[key] = 1. / len(mset.keys())
+        #prior = Multinomial(prior_dict)
+        # Uninformative prior on all types, could use training data above
+        prior = Multinomial( {'Pu': 0.333, 'Wh': 0.3333, 'Hy': 0.3333})
+        i_m = compute_im_discrete(offspring_obs, model, prior)
+        i_p = compute_ip_discrete(offspring_obs, model)
+        print '  Cross:', a, ' x ', b
+        print "    Type observations", mset 
+        print "    Im: %s, Ip: %s" % (i_m.mean, i_p.mean)
+
 
 if __name__ == '__main__':
     sys,exit(main())
