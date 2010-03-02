@@ -166,8 +166,10 @@ def compute_im_continuous(outcomes, model, prior):
     return i_m
 
 def progeny_model(d, cross=None):
+    # Possibly unsure if same species.
     if cross in [('Pu', 'Wh'), ('Wh', 'Pu')]:
         return Multinomial({'y': 1-d, 'n': d})
+    # Definitely the same species.
     if cross in [('Wh', 'Wh'), ('Pu', 'Pu')]:
         return Multinomial({'y': 1, 'n': 0})
     return None
@@ -175,6 +177,7 @@ def progeny_model(d, cross=None):
 def color_model(d, e, w, cross):
     modelPu = stats.norm(10, 1)
     modelWh = stats.norm(0, 1)
+    # Same species
     if cross in [('Pu', 'Wh'), ('Wh', 'Pu'), ('Pu', 'Pu')]:
         modelMix = darwin.mixture.Mixture(((e*w, modelWh), (1-e*w, modelPu)))
     if cross in [('Wh', 'Wh')]:
