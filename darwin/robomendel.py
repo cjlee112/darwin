@@ -7,21 +7,8 @@ from mendel import *
 from entropy import *
 import numpy
 
-def factorial(n):
-    result = 1
-    if n > 1:
-        for i in range(2, n+1):
-            result *= i
-    return result
-
-def multi_coef(n_seq):
-    n = numpy.sum(n_seq)
-    result = float(factorial(n))
-    for i in range(len(n_seq)):
-        result = result / float(factorial(n_seq[i]))
-    return result
-
 # http://en.wikipedia.org/wiki/Multinomial_distribution 
+# this is really more of a categorical distribution
 class Multinomial(stats.rv_discrete):
     """Forms a multinomial from a probability dictionary, e.g. {'Pu':0.9, 'Wh': 0.1}"""
 
