@@ -16,17 +16,17 @@ def odc_test(p6=.5, n=100):
     hmm = NodeGraph({'theta':{'theta':sg}, 'START':{'theta':prior}})
 
     s,obs = hmm.simulate_seq(n)
-    obsGraph = ObsSequence(obs)
-    m = Model(hmm, (obsGraph,))
+    obsLabel = ObsSequenceLabel(obs)
+    m = Model(hmm, obsLabel)
     logPobs = m.calc_fb()
     llDict = m.posterior_ll()
     for i in range(n): # print posteriors
-        obsLabel = obsGraph.get_label(i)
-        nodeLabel = hmm.get_label('theta', (obsLabel,))
+        obsLabel = ObsSequenceLabel(obs, i, 1)
+        nodeLabel = hmm.get_label('theta', obsLabel=obsLabel)
         nodeF = Node(F, nodeLabel)
         nodeL = Node(L, nodeLabel)
         print '%s:%0.3f\t%s:%0.3f\tTRUE:%s,%d,%0.3f' % \
               (nodeF, m.posterior(nodeF),
                nodeL, m.posterior(nodeL),
-               s[i], obs[i], exp(llDict[nodeLabel][0]))
+               s[i], obs[i], exp(llDict[obsLabel][0]))
     return m
