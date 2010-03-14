@@ -17,8 +17,8 @@ def number_test(program='12 33 495'):
 
     hmm = NodeGraph({'theta':{'theta':sg}, 'START':{'theta':prior}})
 
-    obsGraph = ObsSequence(program)
-    m = Model(hmm, (obsGraph,))
+    obsLabel = ObsSequenceLabel(program)
+    m = Model(hmm, obsLabel)
 
     logPobs = m.calc_fb()
     return m
@@ -50,8 +50,8 @@ def math_test(program='2+7'):
     sg = StateGraph({mathExpr:{mathExpr:1., stopIfDone:1.}})
     prior = StateGraph({'START':{mathExpr:1.}})
     hmm = NodeGraph({'theta':{'theta':sg}, 'START':{'theta':prior}})
-    obsGraph = ObsSequence(program)
-    m = Model(hmm, (obsGraph,))
+    obsLabel = ObsSequenceLabel(program)
+    m = Model(hmm, obsLabel)
 
     logPobs = m.calc_fb()
     return m
