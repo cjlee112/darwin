@@ -162,34 +162,34 @@ def plot_im_asym_normal():
     pylab.grid(True)
     pylab.show()
 
-def plot_im_asym_bernoulli():
-    im_points = []
-    simulation_model = stats.bernoulli(0.25)
+#def plot_im_asym_bernoulli():
+    #im_points = []
+    #simulation_model = stats.bernoulli(0.25)
 
-    m = 300
-    n = 100
+    #m = 300
+    #n = 100
 
-    obs_list = list(simulation_model.rvs(n))
-    sample = simulation_model.rvs(m)
+    #obs_list = list(simulation_model.rvs(n))
+    #sample = simulation_model.rvs(m)
 
-    for i in range(3, n):
-        obs = obs_list[0:i]
-        count = obs.count(1)
-        p = float(count) / i
-        model_obs = stats.bernoulli(p)
+    #for i in range(3, n):
+        #obs = obs_list[0:i]
+        #count = obs.count(1)
+        #p = float(count) / i
+        #model_obs = stats.bernoulli(p)
         
-        l_e = box_entropy(obs, min(len(obs)-1, 7), sample=sample)
-        log_prior = discrete_sample_Le(sample, model_obs)
-        i_m = -l_e - log_prior
-        im_points.append((i, i_m.mean))
-        print p, i_m.mean
+        #l_e = box_entropy(obs, min(len(obs)-1, 7), sample=sample)
+        #log_prior = discrete_sample_Le(sample, model_obs)
+        #i_m = -l_e - log_prior
+        #im_points.append((i, i_m.mean))
+        #print p, i_m.mean
 
 
-    pylab.plot([x for (x,y) in im_points], [y for (x,y) in im_points])
-    pylab.xlabel('sample_size')
-    pylab.ylabel('Im')
-    pylab.grid(True)
-    pylab.show()
+    #pylab.plot([x for (x,y) in im_points], [y for (x,y) in im_points])
+    #pylab.xlabel('sample_size')
+    #pylab.ylabel('Im')
+    #pylab.grid(True)
+    #pylab.show()
 
 def progeny_model(d, cross=None):
     # Possibly unsure if same species.
