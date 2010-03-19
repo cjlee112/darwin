@@ -392,7 +392,7 @@ class State(object):
             except AttributeError:
                 return self.emission.pdf(obs)
         obsList = node.var.obsLabel.get_obs()
-        if obsList is not None:
+        if len(obsList) > 0:
             return [safe_log(p) for p in get_plist(obsList)]
         else:
             return () # no obs values here...
