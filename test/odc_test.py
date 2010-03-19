@@ -28,5 +28,5 @@ def odc_test(p6=.5, n=100):
         print '%s:%0.3f\t%s:%0.3f\tTRUE:%s,%d,%0.3f' % \
               (nodeF, m.posterior(nodeF),
                nodeL, m.posterior(nodeL),
-               s[i], obs[i], exp(llDict[obsLabel][0]))
+               s[i], obs[i][0], exp(llDict[obsLabel][0]))
     return m
