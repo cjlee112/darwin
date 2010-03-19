@@ -81,58 +81,53 @@ class StartNode(Node):
         Node.__init__(self, 'START', label)
         self.isub = 'START' # dummy value
 
+
 class StopNode(Node):
     def __init__(self, graph, obsLabel=None, parent=None):
         Node.__init__(self, 'STOP', NodeLabel(graph, 'STOP', obsLabel, parent))
         self.isub = 'STOP' # dummy value
 
-class Label(object):
+
+class NodeLabel(object):
     '''Reference to a specific vertex in a graph'''
-    def __init__(self, graph, label, values=None):
-        self.graph = graph
-        self.label = label
-        if values is not None:
-            self.values = values
-
-    def __repr__(self):
-        return str(self.label)
-    def __hash__(self):
-        return hash((self.graph, self.label))
-    def __cmp__(self, other):
-        try:
-            return cmp((self.graph, self.label), (other.graph, other.label))
-        except AttributeError:
-            return cmp(id(self), id(other))
-    def get_children(self, **kwargs):
-        '''Get child,obs pairs for child nodes of this node '''
-        return self.graph.__getitem__(self, **kwargs)
-    def __len__(self):
-        'Get count of descendants'
-        return len(self.graph[self])
-
-class NodeLabel(Label):
     def __init__(self, graph, label, obsLabel=None, parent=None):
         self.graph = graph
         self.label = label
         self.obsLabel = obsLabel
         self.parent = parent
+
     def __hash__(self):
         return hash((self.graph, self.label, self.obsLabel, id(self.parent)))
+
     def __cmp__(self, other):
         try:
             return cmp((self.graph, self.label, self.obsLabel, id(self.parent)),
                   (other.graph, other.label, other.obsLabel, id(other.parent)))
         except AttributeError:
             return cmp(id(self), id(other))
+
     def __repr__(self):
         return str((self.label, self.obsLabel))
+
     def get_obs_label(self, obsLabel, parent=None):
         if parent is None:
             parent = self.parent
         return self.__class__(self.graph, self.label, obsLabel, parent)
 
-class LabelGraph(object):
-    labelClass = Label
+    def get_children(self, **kwargs):
+        '''Get child,obs pairs for child nodes of this node '''
+        return self.graph.__getitem__(self, **kwargs)
+
+    def __len__(self):
+        'Get count of descendants'
+        return len(self.graph[self])
+
+class NodeGraph(object):
+    '''Graph of the form {source:{target:edge}}
+    where source, target are NodeLabel objects, and
+    edge is the state graph specifying the state transitions from source
+    to target.'''
+    labelClass = NodeLabel
 
     def __init__(self, graph):
         '''graph should be dict of {sourceLabel:{destLabel:stateGraph}}
@@ -173,6 +168,28 @@ class LabelGraph(object):
     def __hash__(self):
         return id(self)
 
+    def simulate_seq(self, n):
+        'simulate markov chain of length n'
+        node = StartNode(self, obsLabel=ObsSequenceSimulator())
+        s = []
+        obs = []
+        for i in range(n):
+            p = random.random()
+            total = 0.
+            for stateGroup in node.get_children():
+                for dest,edge in stateGroup.items(): # choose next state
+                    if dest.state == 'STOP':
+                        continue
+                    total += edge
+                    if p <= total:
+                        break
+                break # this algorithm can only handle linear chain ...
+            s.append(dest)
+            obs.append(dest.var.obsLabel.get_obs())
+            node = dest
+        return s,tuple(obs)
+
+
 class ObsExhaustedError(IndexError):
     pass
 
@@ -193,9 +210,12 @@ class ObsSequenceLabel(object):
     def get_next(self, empty=False, length=1,**kwargs):
         if empty:
             length = 0
-        return self.__class__(self.seq, self.stop, length)
+        return self.__class__(self.seq, self.stop, length, self.label)
     def __repr__(self):
-        return str(self.start)
+        if self.label is not None:
+            return str(self.label) + ':' + str(self.start)
+        else:
+            return str(self.start)
     def __hash__(self):
         return hash((self.label, self.start, self.stop))
     def __cmp__(self, other):
@@ -245,41 +265,6 @@ class ObsSequenceSimulator(ObsSequenceLabel):
             state = None
         return self.__class__(self.seq, state, self.stop, length)
 
-    
-
-
-class NodeGraph(LabelGraph):
-    '''Graph of the form {source:{target:edge}}
-    where source, target are NodeLabel objects, and
-    edge is the state graph specifying the state transitions from source
-    to target.'''
-    labelClass = NodeLabel
-
-    def simulate_seq(self, n):
-        'simulate markov chain of length n'
-        node = StartNode(self, obsLabel=ObsSequenceSimulator())
-        s = []
-        obs = []
-        for i in range(n):
-            p = random.random()
-            total = 0.
-            for stateGroup in node.get_children():
-                for dest,edge in stateGroup.items(): # choose next state
-                    if dest.state == 'STOP':
-                        continue
-                    total += edge
-                    if p <= total:
-                        break
-                break # this algorithm can only handle linear chain ...
-            s.append(dest)
-            obs.append(dest.var.obsLabel.get_obs())
-            node = dest
-        return s,tuple(obs)
-
-class TrivialGraph(LabelGraph):
-    'Graph containing single node with self-edge'
-    def __init__(self, var, stateGraph):
-        LabelGraph.__init__(self, {var.label:{var.label:stateGraph}})
 
 class Model(object):
     def __init__(self, dependencyGraph, obsLabel, logPmin=neginf):
@@ -355,7 +340,7 @@ class TrivialMap(object):
     def __getitem__(self, k):
         return self.v
 
-class StateGraph(UserDict.DictMixin):
+class StateGraph(object):
     '''Provides graph interface to nodes in HMM '''
     def __init__(self, graph):
         '''graph supplies the allowed state-state transitions and probabilities'''
@@ -657,6 +642,6 @@ def save_graphviz(outfile, g, post_f=None, majorColor='red',
         for i,targets in enumerate(dependencies):
             for dest,edge in targets.items():
                 e = gd.newLink(gNodes[node], gNodes[dest])
-                gd.propertyAppend(e, 'color', colors[i])
+                gd.propertyAppend(e, 'color', colors[i % len(colors)])
     gd.dot(outfile)
 
