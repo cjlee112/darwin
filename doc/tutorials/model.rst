@@ -113,14 +113,11 @@ sequence of 100 states and observations via simulation::
     >>> s,obs = hmm.simulate_seq(n)
 
 Prior to performing Bayesian inference on this set of observations, 
-we must transform them into a graph structure (in the standard
-Pygr format of a dictionary of the form {srcLabel:{destLabel:obs}}
-where srcLabel and destLabel are :class:`model.ObsLabel` and
-obs is a tuple of one or more observations.  For a linear sequence
-of observations, we can just use the convenience class
-:class:`model.ObsSequence` to construct this graph for us::
+we need to package them using an "observation label" container.  
+For a linear sequence of observations, we use the
+:class:`model.ObsSequenceLabel` class::
 
-    >>> obsGraph = ObsSequence(obs)
+    >>> obsLabel = ObsSequenceLabel(obs)
 
 Bayesian inference on the HMM observations
 ------------------------------------------
@@ -128,12 +125,12 @@ Bayesian inference on the HMM observations
 Finally, we construct a :class:`model.Model` object to compile the
 hmm and perform the calculations::
 
-    >>> m = Model(hmm)
+    >>> m = Model(hmm, obsLabel)
 
 Inference on the possible hidden states is computed using the 
 *forward-backward algorithm*::
 
-    >>> logPobs = m.calc_fb((obsGraph,))
+    >>> logPobs = m.calc_fb()
 
 This computes several things (stored as attributes on the
 `m` object, in log-probability format,
@@ -183,8 +180,8 @@ Printing out our results
 Let's just print out all our results::
 
     >>> for i in range(n): # print posteriors
-    ...    obsLabel = obsGraph.get_label(i)
-    ...    nodeLabel = hmm.get_label('theta', (obsLabel,))
+    ...    obsLabel = ObsSequenceLabel(obs, i, 1)
+    ...    nodeLabel = hmm.get_label('theta', obsLabel=obsLabel)
     ...    nodeF = Node(F, nodeLabel)
     ...    nodeL = Node(L, nodeLabel)
     ...    print '%s:%0.3f\t%s:%0.3f\tTRUE:%s,%d,%0.3f' % \
