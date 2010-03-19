@@ -333,7 +333,7 @@ a set of (X,Y)=(plantID,color) pairs::
 
    >>> tuples = []
    >>> for i in range(20):
-   ...    for v in d[i]:
+   ...    for v in obsSet[i].seq[0]:
    ...       tuples.append((i,v))
    ...
 
