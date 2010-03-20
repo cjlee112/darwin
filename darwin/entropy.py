@@ -293,13 +293,13 @@ def d1_intervals(points, start, stop, m):
     ivals.append((stop,)) # save end marker
     return ivals
 
-def d1_integrate(ivals):
+def d1_integrate(ivals, nearZero):
     'integrate a set of d1 density interval data, properly handling f=0 cases'
     x0, x1, f, c = [], [], [], [] # initialize empty lists
     total = 0.
     for i in range(len(ivals) - 1):
         xv, fv, cv = ivals[i]
-        if fv: # 1/(fx+c) interval, so integrate
+        if abs(fv) > nearZero: # 1/(fx+c) interval, so integrate
             x0.append(xv)
             x1.append(ivals[i + 1][0])
             f.append(fv)
@@ -322,7 +322,7 @@ class Density_d1(object):
         start, stop: bounds of detector range over which to normalize density
         m: number of points to use for distance averaging algorithm'''
         self.ivals = d1_intervals(points, start, stop, m)
-        self.total = d1_integrate(self.ivals)
+        self.total = d1_integrate(self.ivals, 0.1 / m)
 
     def __call__(self, x):
         'get estimated density at x'
