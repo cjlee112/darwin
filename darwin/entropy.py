@@ -315,7 +315,16 @@ def d1_integrate(ivals, nearZero):
     return ((l1 - l0) / f).sum() + total
 
 class Density_d1(object):
-    'computes normalized density from sample of points, to apply to other data points'
+    '''computes normalized density from sample of points, to apply to other data points
+
+    >>> m = stats.norm(0,1)
+    >>> data = m.rvs(100)
+    >>> data2 = m.rvs(100)
+    >>> dens = entropy.Density_d1(data, -10, 10, 13)
+    >>> d2 = dens.pdf(data2)
+    >>> -numpy.average(numpy.log(d2))
+    1.4896956026040085
+    '''
     def __init__(self, points, start, stop, m):
         '''generate normalized density based on average distance of m nearest neighbors.
         points: set of 1D sample points
