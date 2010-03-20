@@ -268,14 +268,17 @@ def d1_intervals(points, start, stop, m):
     points: set of 1D sample points
     start, stop: bounds of detector range over which to integrate density
     m: number of points to use for distance averaging algorithm'''
-    m += (m + 1) % 2 # ensure that m is odd, to prevent f=0 case.
+    n = len(points)
+    if n < 2:
+        raise ValueError('cannot generate d1 density with less than 2 data points')
+    elif n < m:
+        m = n
     points.sort() # points must be in order!
     f = -1. # x coeff, goes from -1 to 1, dep'g on whether points are to right vs left
     df = 2. / m # change in f as we cross over a single point
     c = sum(points[:m]) # all points initially to right of start
     ivals = [(start, f, c / m)]
     l = 0
-    n = len(points)
 
     for x in points: # generate 2n-m distinct integration intervals
         while l + m < n and (points[l] + points[l + m]) / 2. < x:
@@ -291,14 +294,25 @@ def d1_intervals(points, start, stop, m):
     return ivals
 
 def d1_integrate(ivals):
-    # integrate a set of d1 density interval data
-    f = numpy.core.array([t[1] for t in ivals[:-1]])
-    c = numpy.core.array([t[2] for t in ivals[:-1]])
-    x0 = numpy.core.array([t[0] for t in ivals[:-1]])
-    x1 = numpy.core.array([t[0] for t in ivals[1:]])
+    'integrate a set of d1 density interval data, properly handling f=0 cases'
+    x0, x1, f, c = [], [], [], [] # initialize empty lists
+    total = 0.
+    for i in range(len(ivals) - 1):
+        xv, fv, cv = ivals[i]
+        if fv: # 1/(fx+c) interval, so integrate
+            x0.append(xv)
+            x1.append(ivals[i + 1][0])
+            f.append(fv)
+            c.append(cv)
+        else: # constant 1/c density interval, so just sum
+            total += (ivals[i + 1][0] - xv) / cv
+    f = numpy.core.array(f)
+    c = numpy.core.array(c)
+    x0 = numpy.core.array(x0)
+    x1 = numpy.core.array(x1)
     l0 = numpy.log(f * x0 + c)
     l1 = numpy.log(f * x1 + c)
-    return ((l1 - l0) / f).sum()
+    return ((l1 - l0) / f).sum() + total
 
 class Density_d1(object):
     'computes normalized density from sample of points, to apply to other data points'
