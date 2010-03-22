@@ -99,3 +99,38 @@ class PeaPlant(object):
         """Observe n times."""
         return self.genome.get_phenotypes()[0].rvs(n)
 
+class SpeciesCrossModel(object):
+    'species model for mating observations'
+    def __init__(self, species, priors, pHybrid=0., pFail=0.001):
+        '''species: a list of species models (must have pdf() method)
+        priors: list of prior probabilities for the corresponding species
+        pHybrid: probability that two different species will yield progeny
+        pFail: probability that a mating between male & female of same
+        species will produce no progeny.'''
+        self.species = species
+        self.priors = priors
+        self.pHybrid = pHybrid
+        self.pFail = pFail
+
+    def p_obs(self, parent1, parent2, progeny):
+        '''compute mating-success likelihood for parent1 obs to
+        be emitted by one species and parent2 obs to be emitted by
+        another, and progeny (True/False) based on whether they
+        are the same species.
+        Assumes p(progeny) only depends on whether the two species
+        are the same (i.e. a constant for all non-matching pairs).'''
+        pMatch = 0.
+        for i,sp in enumerate(self.species):
+            p1 = priors[i] * sp.pdf(parent1)
+            p2 = priors[i] * sp.pdf(parent2)
+            pMatch += p1 * p2 # compute diagonal
+            pSum1 += p1
+            pSum2 += p2
+        pMismatch = pSum1 * pSum2 - pMatch # subtract diagonal
+        if progeny: # fixed probability for inter-species progeny
+            pMismatch *= self.pHybrid
+            pMatch *= (1. - self.pFail)
+        else: # no progeny
+            pMismatch *= (1. - self.pHybrid)
+            pMatch *= self.pFail
+        return pMatch + pMismatch # sum diagonal and rest of matrix
