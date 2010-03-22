@@ -118,7 +118,10 @@ class SpeciesCrossModel(object):
         another, and progeny (True/False) based on whether they
         are the same species.
         Assumes p(progeny) only depends on whether the two species
-        are the same (i.e. a constant for all non-matching pairs).'''
+        are the same (i.e. a constant for all non-matching pairs),
+        and also that parent1 & parent2 are otherwise independent.
+
+        Returns p(parent1), p(parent2|parent1), p(progeny|parent1, parent2)'''
         pMatch = 0.
         for i,sp in enumerate(self.species):
             p1 = priors[i] * sp.pdf(parent1)
@@ -133,4 +136,4 @@ class SpeciesCrossModel(object):
         else: # no progeny
             pMismatch *= (1. - self.pHybrid)
             pMatch *= self.pFail
-        return pMatch + pMismatch # sum diagonal and rest of matrix
+        return pSum1, pSum2, (pMatch + pMismatch) / (pSum1 * pSum2)
