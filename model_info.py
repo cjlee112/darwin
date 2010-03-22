@@ -23,6 +23,10 @@ def compute_ip_continuous(obs, model):
     Ip = -He - Le
     return Ip
 
+def sample_density(data, start, stop):
+    dens = Density_d1(data, start, stop, 13)
+    return dens
+
 def compute_im_continuous(obs, model, sample):
     # He = empirical cross entropy
     He = box_entropy(obs, min(len(obs)-1, 7), sample=sample)
@@ -148,12 +152,17 @@ def plot_im_asym_normal():
 
     obs_list = list(simulation_model.rvs(n))
     sample = simulation_model.rvs(m)
+    
     for i in range(3, n):
         obs = numpy.core.array(obs_list[0:i])
         mean = numpy.average(obs)
         var = numpy.average(obs * obs) - mean * mean
-        model_obs = stats.norm(mean, math.sqrt(var))
-        Im = compute_im_continuous(obs, model_obs, sample)
+        model_ml = stats.norm(mean, math.sqrt(var))
+        model_obs = Density_d1(obs, -4, 4, 13)
+        #d2 = model_obs.pdf(sample)
+        He = sample_Le(sample, model_obs)
+        Le = sample_Le(sample, model_ml)
+        Im = Le - He
         Im_points.append((i, Im.mean))
 
     pylab.plot([x for (x,y) in Im_points], [y for (x,y) in Im_points])
@@ -599,8 +608,8 @@ def main():
 
 
 if __name__ == '__main__':
-    hybrid_model_info_gain()
-    #plot_im_asym_normal()
+    #hybrid_model_info_gain()
+    plot_im_asym_normal()
     exit()
     sys.exit(main())
 
