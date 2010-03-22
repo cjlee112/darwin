@@ -263,6 +263,97 @@ def d2_entropy(v, m, use_d2=True):
         dvec = d_density(v, m)
     return LogPVector( - numpy.log(dvec))
 
+def d1_intervals(points, start, stop, m):
+    '''generate integration intervals [(start, f, c)] for d1-based density
+    points: set of 1D sample points
+    start, stop: bounds of detector range over which to integrate density
+    m: number of points to use for distance averaging algorithm'''
+    n = len(points)
+    if n < 2:
+        raise ValueError('cannot generate d1 density with less than 2 data points')
+    elif n < m:
+        m = n
+    points.sort() # points must be in order!
+    f = -1. # x coeff, goes from -1 to 1, dep'g on whether points are to right vs left
+    df = 2. / m # change in f as we cross over a single point
+    c = sum(points[:m]) # all points initially to right of start
+    ivals = [(start, f, c / m)]
+    l = 0
+
+    for x in points: # generate 2n-m distinct integration intervals
+        while l + m < n and (points[l] + points[l + m]) / 2. < x:
+            p2 = points[l] + points[l + m]
+            c += p2
+            f -= df
+            ivals.append((p2 / 2., f, c / m)) # transition where l drops out, l+m joins
+            l += 1
+        c -= 2 * x
+        f += df
+        ivals.append((x, f, c / m))  # transition where x switches from right to left
+    ivals.append((stop,)) # save end marker
+    return ivals
+
+def d1_integrate(ivals, nearZero):
+    'integrate a set of d1 density interval data, properly handling f=0 cases'
+    x0, x1, f, c = [], [], [], [] # initialize empty lists
+    total = 0.
+    for i in range(len(ivals) - 1):
+        xv, fv, cv = ivals[i]
+        if abs(fv) > nearZero: # 1/(fx+c) interval, so integrate
+            x0.append(xv)
+            x1.append(ivals[i + 1][0])
+            f.append(fv)
+            c.append(cv)
+        else: # constant 1/c density interval, so just sum
+            total += (ivals[i + 1][0] - xv) / cv
+    f = numpy.core.array(f)
+    c = numpy.core.array(c)
+    x0 = numpy.core.array(x0)
+    x1 = numpy.core.array(x1)
+    l0 = numpy.log(f * x0 + c)
+    l1 = numpy.log(f * x1 + c)
+    return ((l1 - l0) / f).sum() + total
+
+class Density_d1(object):
+    '''computes normalized density from sample of points, to apply to other data points
+
+    >>> m = stats.norm(0,1)
+    >>> data = m.rvs(100)
+    >>> data2 = m.rvs(100)
+    >>> dens = entropy.Density_d1(data, -10, 10, 13)
+    >>> d2 = dens.pdf(data2)
+    >>> -numpy.average(numpy.log(d2))
+    1.4896956026040085
+    '''
+    def __init__(self, points, start, stop, m):
+        '''generate normalized density based on average distance of m nearest neighbors.
+        points: set of 1D sample points
+        start, stop: bounds of detector range over which to normalize density
+        m: number of points to use for distance averaging algorithm'''
+        self.ivals = d1_intervals(points, start, stop, m)
+        self.total = d1_integrate(self.ivals, 0.1 / m)
+
+    def __call__(self, x):
+        'get estimated density at x'
+        if x < self.ivals[0][0] or x > self.ivals[-1][0]:
+            raise IndexError('out of allowed detector range')
+        l = 0
+        r = len(self.ivals) - 1
+        while r - l > 1: # binary search for the interval containing x
+            mid = (l + r) / 2
+            if x < self.ivals[mid][0]:
+                r = mid
+            else:
+                l = mid
+        f, c = self.ivals[l][1:]
+        return 1. / (self.total * (f * x + c)) # normalized density
+
+    def pdf(self, data):
+        'return array of pdf values for a set of data points'
+        result = numpy.core.zeros((len(data)))
+        for i,x in enumerate(data):
+            result[i] = self(x)
+        return result
 
 def grow_interval(target, l, r, cy, n, k=0):
     'expand interval on either left or right depending on which is closer'

@@ -2,6 +2,10 @@ import UserDict
 from math import *
 import random
 from sys import maxint
+try:
+    import numpy
+except ImportError:
+    pass
 
 # log-probability convenience functions
 
@@ -19,6 +23,11 @@ def log_sum_list(logList):
     'return log of sum of arguments passed in log-form'
     if len(logList) == 1: # handle trivial case
         return logList[0]
+    try: # use numpy array methods
+        top = logList.max()
+        return top + log(numpy.exp(logList - top).sum())
+    except (AttributeError,NameError): # use regular Python math
+        pass
     top = max(logList)
     return top + log(sum([exp(x - top) for x in logList]))
     
@@ -393,7 +402,10 @@ class State(object):
                 return self.emission.pdf(obs)
         obsList = node.var.obsLabel.get_obs()
         if len(obsList) > 0:
-            return [safe_log(p) for p in get_plist(obsList)]
+            try:
+                return numpy.log(get_plist(obsList))
+            except NameError:
+                return [safe_log(p) for p in get_plist(obsList)]
         else:
             return () # no obs values here...
                 
