@@ -217,26 +217,34 @@ state::
 
 We assemble these into a simple model graph that shows the structure
 of these variables; here we merely draw them as a star-topology from the 
-initial 'START' state.  We name our phenotype variable `chi`::
+initial 'START' state.  The :class:`model.BranchGenerator` class
+produces model branches automatically for all the observation sets
+provided in our input.  We name our phenotype variable `chi`,
+and give it the initial state transitions provided by our priors::
 
-   >>> dg = model.Model(model.NodeGraph({'START':{'chi':prior},
+   >>> branches = model.BranchGenerator('chi', prior)
+   >>> dg = model.Model(model.NodeGraph({'START':branches,
    ...                                   'chi':{'chi':term}}))
    ...
 
 Finally, we package each plant's observations in an *observation graph*
 keyed by the possible plant IDs::
 
-   >>> d = {}
+   >>> obsSet = []
    >>> for plant in range(2): # two white plants
-   >>>    d[plant] = modelWh.rvs(100)
-   ...
+   ...     obsSet.append(model.ObsSequenceLabel((modelWh.rvs(100),), label=plant))
    >>> for plant in range(2, 20): # 18 purple plants
-   >>>    d[plant] = modelPu.rvs(100)
-   ...
-   >>> obsGraph = model.ObsGraph({'START':d})
+   ...     obsSet.append(model.ObsSequenceLabel((modelPu.rvs(100),), label=plant))
 
-Note that this creates a start topology of 20 independent
-observation groups, each connected directly to the START node.
+Note that this creates a list of 20 independent
+observation groups, which our :class:`model.BranchGenerator` will iterate 
+over.
+
+Finally, we construct our model out of these components; we force the
+obsSet into a non-mutable data type (tuple) to enable it to be hashed::
+
+   >>> m = model.Model(dg, tuple(obsSet))
+
 
 We now compute the model probabilities using the forward-backward
 algorithm::
@@ -257,13 +265,11 @@ We can use these posterior likelihoods to compute the empirical information
 gain versus the previous mixture model::
 
    >>> for plant in range(20):
-   ...     obs = d[plant]
-   ...     obsLabel = obsGraph.get_label(plant)
-   ...     nodeLabel = dg.graph.get_label('chi', (obsLabel,))
-   ...     Le = entropy.LogPVector(numpy.array(llDict[nodeLabel]))
-   ...     LeMix = entropy.sample_Le(obs, modelMix)
+   ...     obsLabel = obsSet[plant].get_next()
+   ...     Le = entropy.LogPVector(numpy.array(llDict[obsLabel]))
+   ...     LeMix = entropy.sample_Le(obsLabel.seq[0], modelMix)
    ...     Ie = Le - LeMix
-   ...     He = entropy.box_entropy(obs, 7)
+   ...     He = entropy.box_entropy(obsLabel.seq[0], 7)
    ...     Ip = -Le - He
    ...     print 'plant %d, Ie > %1.3f, mean = %1.3f\tIp > %1.3f, mean = %1.3f' \
    ...           % (plant, Ie.get_bound(), Ie.mean, Ip.get_bound(), Ip.mean)
@@ -327,7 +333,7 @@ a set of (X,Y)=(plantID,color) pairs::
 
    >>> tuples = []
    >>> for i in range(20):
-   ...    for v in d[i]:
+   ...    for v in obsSet[i].seq[0]:
    ...       tuples.append((i,v))
    ...
 
