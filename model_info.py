@@ -3,7 +3,9 @@
 import math
 import sys
 
-from scipy import stats
+import scipy
+from scipy import stats, special
+
 import pylab
 
 from darwin.robomendel import *
@@ -52,6 +54,21 @@ def compute_ie_discrete(obs, model, prior):
     Ie = Le_new - Le
     return Ie
 
+# p77 of Chris's Text
+class NormalPosterior(object):
+    def __init__(self, sample):
+        V = numpy.mean(sample)
+        U = math.sqrt(numpy.mean(sample*sample) - V*V)
+        #U = math.sqrt(numpy.var(sample))
+        n = len(sample)
+        gamma = special.gamma
+        _pdf = lambda x: gamma((n-1.)/2.) / (U * gamma((n-2.)/2.) * math.sqrt(math.pi * (n+1))) * (1 + (x - V) * (x - V) / ((n+1) * U * U))**((-n + 1.)/2.)
+        self._pdf = _pdf
+
+    def pdf(self, obs):
+        if hasattr(obs, "__iter__"):
+            return map(self._pdf, obs)
+        return self._pdf(obs)
 
 #def compute_im_discrete(outcomes, model, prior):
     #l_e = discrete_sample_Le(outcomes, model)
@@ -155,13 +172,14 @@ def plot_im_asym_normal():
     
     for i in range(3, n):
         obs = numpy.core.array(obs_list[0:i])
-        mean = numpy.average(obs)
-        var = numpy.average(obs * obs) - mean * mean
-        model_ml = stats.norm(mean, math.sqrt(var))
+        #mean = numpy.average(obs)
+        #var = numpy.average(obs * obs) - mean * mean
+        #model_ml = stats.norm(mean, math.sqrt(var))
+        model_np = NormalPosterior(obs)
         model_obs = Density_d1(obs, -4, 4, 13)
         #d2 = model_obs.pdf(sample)
         He = sample_Le(sample, model_obs)
-        Le = sample_Le(sample, model_ml)
+        Le = sample_Le(sample, model_np)
         Im = Le - He
         Im_points.append((i, Im.mean))
 
@@ -609,6 +627,13 @@ def main():
 
 if __name__ == '__main__':
     #hybrid_model_info_gain()
+    #norm = stats.norm(0,1)
+    #sample = norm.rvs(330)
+    #np = NormalPosterior(sample)
+    #domain = [x / 1000. for x in range(-3000, 3000)]
+    #pylab.plot(domain, [norm.pdf(x) for x in domain])
+    #pylab.plot(domain, [np.pdf(x) for x in domain])    
+    #pylab.show()
     plot_im_asym_normal()
     exit()
     sys.exit(main())
