@@ -47,7 +47,7 @@ def calc_box(vectors,dx):
         b,c = numpy.ix_(z,a[i])
         d = b+c
         e = numpy.core.abs(a-d) # GET DIFFERENCE VECTORS
-        l[i] = numpy.core.sum(numpy.core.alltrue(numpy.core.less(e,dx),1))
+        l[i] = numpy.core.sum(numpy.core.alltrue(numpy.core.less(e,dx),1))    
     return l
 
 def calc_density(vectors,dx):

@@ -7,21 +7,8 @@ from mendel import *
 from entropy import *
 import numpy
 
-def factorial(n):
-    result = 1
-    if n > 1:
-        for i in range(2, n+1):
-            result *= i
-    return result
-
-def multi_coef(n_seq):
-    n = numpy.sum(n_seq)
-    result = float(factorial(n))
-    for i in range(len(n_seq)):
-        result = result / float(factorial(n_seq[i]))
-    return result
-
 # http://en.wikipedia.org/wiki/Multinomial_distribution 
+# this is really more of a categorical distribution
 class Multinomial(stats.rv_discrete):
     """Forms a multinomial from a probability dictionary, e.g. {'Pu':0.9, 'Wh': 0.1}"""
 
@@ -41,7 +28,7 @@ class Multinomial(stats.rv_discrete):
         return obs
 
     def pmf(self, obs):
-        if hasattr(obs,"__iter__"):
+        if hasattr(obs, "__iter__"):
             results = []
             for x in obs:
                 try:
@@ -51,6 +38,8 @@ class Multinomial(stats.rv_discrete):
             return results
         return self.p_seq[obs]
 
+    def __repr__(self):
+        return 'Multinomial(%s)' % self.p_dict
 
 def multiset(list_):
     """Returns a multiset (a dictionary) from the input iterable list_."""
@@ -65,8 +54,10 @@ def multiset(list_):
 def determine_color(plant):
     obs = plant.rvs(20)
     mean = numpy.average(obs)
-    if mean > 5:
+    if mean > 8:
         return 'purple'
+    if mean > 4:
+        return 'lavender'
     return 'white'
 
 # to construct a homozygous purple plant, use
@@ -79,6 +70,10 @@ class PeaPlant(object):
     purple_chromosome = Chromosome([(0.5, purple_allele)])
     white_genome = DiploidGenome({1:(white_chromosome, white_chromosome)})
     purple_genome = DiploidGenome({1:(purple_chromosome, purple_chromosome)})
+
+    lavender_allele = DominantAllele("la", stats.norm(5,1))
+    lavender_chromosome = Chromosome([(0.5, lavender_allele)])
+    lavender_genome = DiploidGenome({1:(lavender_chromosome, lavender_chromosome)})
 
     def __init__(self, name=None, genome=None):
         if genome is None:
@@ -98,6 +93,10 @@ class PeaPlant(object):
     def rvs(self, n=1):
         """Observe n times."""
         return self.genome.get_phenotypes()[0].rvs(n)
+
+    def __repr__(self):
+        return determine_color(self)
+
 
 class SpeciesCrossModel(object):
     'species model for mating observations'
@@ -137,3 +136,4 @@ class SpeciesCrossModel(object):
             pMismatch *= (1. - self.pHybrid)
             pMatch *= self.pFail
         return pSum1, pSum2, (pMatch + pMismatch) / (pSum1 * pSum2)
+
