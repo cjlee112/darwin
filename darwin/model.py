@@ -230,7 +230,7 @@ class ObsSequenceLabel(object):
     def __cmp__(self, other):
         try:
             return cmp((self.label, self.start, self.stop),
-                       (self.label, other.start, other.stop))
+                       (other.label, other.start, other.stop))
         except AttributeError:
             return cmp(id(self), id(other))
 
