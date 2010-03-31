@@ -222,7 +222,7 @@ produces model branches automatically for all the observation sets
 provided in our input.  We name our phenotype variable `chi`,
 and give it the initial state transitions provided by our priors::
 
-   >>> branches = model.BranchGenerator('chi', prior)
+   >>> branches = model.BranchGenerator('chi', prior, iterTag='plantID')
    >>> dg = model.Model(model.NodeGraph({'START':branches,
    ...                                   'chi':{'chi':term}}))
    ...
@@ -230,11 +230,11 @@ and give it the initial state transitions provided by our priors::
 Finally, we package each plant's observations in an *observation graph*
 keyed by the possible plant IDs::
 
-   >>> obsSet = []
+   >>> obsSet = model.ObsSet('plants')
    >>> for plant in range(2): # two white plants
-   ...     obsSet.append(model.ObsSequenceLabel((modelWh.rvs(100),), label=plant))
+   ...     obsSet.add_obs(modelWh.rvs(100), plantID=plant)
    >>> for plant in range(2, 20): # 18 purple plants
-   ...     obsSet.append(model.ObsSequenceLabel((modelPu.rvs(100),), label=plant))
+   ...     obsSet.add_obs(modelPu.rvs(100), plantID=plant)
 
 Note that this creates a list of 20 independent
 observation groups, which our :class:`model.BranchGenerator` will iterate 
@@ -265,11 +265,11 @@ We can use these posterior likelihoods to compute the empirical information
 gain versus the previous mixture model::
 
    >>> for plant in range(20):
-   ...     obsLabel = obsSet[plant].get_next()
+   ...     obsLabel = obsSet.get_subset(plantID=plant)
    ...     Le = entropy.LogPVector(numpy.array(llDict[obsLabel]))
-   ...     LeMix = entropy.sample_Le(obsLabel.seq[0], modelMix)
+   ...     LeMix = entropy.sample_Le(obsLabel.get_obs(), modelMix)
    ...     Ie = Le - LeMix
-   ...     He = entropy.box_entropy(obsLabel.seq[0], 7)
+   ...     He = entropy.box_entropy(obsLabel.get_obs(), 7)
    ...     Ip = -Le - He
    ...     print 'plant %d, Ie > %1.3f, mean = %1.3f\tIp > %1.3f, mean = %1.3f' \
    ...           % (plant, Ie.get_bound(), Ie.mean, Ip.get_bound(), Ip.mean)
