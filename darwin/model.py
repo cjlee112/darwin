@@ -234,16 +234,113 @@ class ObsSequenceLabel(object):
         except AttributeError:
             return cmp(id(self), id(other))
 
+
+class ObsSet(object):
+    'container for tagged observations'
+    def __init__(self, name):
+        'name must be unique within a given model'
+        self.name = name
+        self._obs = []
+        self._tags= {}
+
+    def add_obs(self, values, **tags):
+        'add list of observations [values] with kwargs key=value tags'
+        iobs = len(self._obs)
+        for k,v in tags.items():
+            self._tags.setdefault(k, {}).setdefault(v, set()).add(iobs)
+        self._obs.append(values)
+
+    def get_subset(self, **tags):
+        'select subset that matches tag key=value constraints'
+        return ObsSubset(self, **tags)
+
+    def get_tag_dict(self, tag):
+        'get dict of {k:ObsSubset(tag=k)} subsets of this set'
+        d = {}
+        for k in self._tags[tag]:
+            d[k] = self.get_subset(**{tag:k})
+        return d
+
+    def get_next(self, **kwargs): # dummy method for LinearState compatibility
+        return self
+
+    def __hash__(self):
+        return hash(self.name)
+
+    def __cmp__(self, other):
+        try:
+            return cmp(self.name, other.name)
+        except AttributeError:
+            return cmp(id(self), id(other))
+
+    def __repr__(self):
+        return 'ObsSet(%s)' % self.name
+
+
+class ObsSubset(object):
+    def __init__(self, obsSet, **tags):
+        self.obsSet = obsSet
+        self.tags = tuple(tags.items())
+
+    def get_obs(self):
+        for k,v in self.tags:
+            try:
+                subset = subset.intersection(self.obsSet._tags[k][v])
+            except NameError:
+                subset = self.obsSet._tags[k][v]
+        for iobs in subset:
+            try:
+                results = numpy.concatenate((results, self.obsSet._obs[iobs]))
+            except NameError:
+                results = self.obsSet._obs[iobs]
+        return results
+
+    def get_subset(self, **tags):
+        'select subset that matches (additional) tag key=value constraints'
+        return self.__class__(self.obsSet, self.tags + tags.items())
+
+    def get_next(self, **kwargs): # dummy method for LinearState compatibility
+        return self
+
+    def get_tag_dict(self, tag):
+        'get dict of {k:ObsSubset(tag=k)} subsets of this subset'
+        d = {}
+        for k in self.obsSet._tags[tag]:
+            d[k] = self.get_subset(**{tag:k})
+        return d
+
+    def __hash__(self):
+        return hash((self.obsSet, self.tags))
+
+    def __cmp__(self, other):
+        try:
+            return cmp((self.obsSet, self.tags),
+                       (other.obsSet, other.tags))
+        except AttributeError:
+            return cmp(id(self), id(other))
+
+    def __repr__(self):
+        return 'ObsSet(%s, %s)' % (self.obsSet.name,
+                  ', '.join([('%s=%s' % t) for t in self.tags]))
+
+
 class BranchGenerator(object):
-    def __init__(self, label, stateGraph):
+    def __init__(self, label, stateGraph, iterTag=None, **tags):
         self.label = label
         self.stateGraph = stateGraph
+        self.iterTag = iterTag
+        self.tags = tags
 
     def __call__(self, nodeLabel):
         'return {NodeLabel:stateGraph} dict'
         d = {}
-        for obsLabel in nodeLabel.obsLabel: # assume obsLabel iterable
-            try: # aleady a NodeLabel
+        subset = nodeLabel.obsLabel # assume obsLabel iterable
+        if self.tags: # filter using these tag constraints
+            subset = subset.get_subset(** self.tags)
+        if self.iterTag: # generate branches for each value of this tag
+            subset = subset.get_tag_dict(self.iterTag).values()
+        for obsLabel in subset:
+            try: # already a NodeLabel
                 newLabel = self.label.get_obs_label(obsLabel)
             except AttributeError: # need to create a new NodeLabel
                 newLabel = nodeLabel.graph.get_target(self.label, self.stateGraph)
