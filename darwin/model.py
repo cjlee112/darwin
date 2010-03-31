@@ -516,6 +516,19 @@ class LinearState(State):
     '''Models a state in a linear chain '''
     pass
 
+
+class FilterState(State):
+    'filters observations according to tag=value kwargs'
+    def __init__(self, name, emission, **tags):
+        State.__init__(self, name, emission)
+        self.tags = tags
+        
+    def __call__(self, fromNode, targetLabel, obsLabel, edge, parent):
+        newLabel = targetLabel.get_obs_label(obsLabel.get_subset(** self.tags),
+                                             parent)
+        return Node(self, newLabel)
+
+
 class SilentState(State):
     'state that emits nothing'
     def __init__(self, name):
