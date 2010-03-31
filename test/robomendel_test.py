@@ -2,6 +2,7 @@ from darwin import mendel
 from darwin import model
 from darwin import mixture
 from darwin import entropy
+from darwin import robomendel
 from scipy import stats
 import numpy
 
@@ -41,3 +42,36 @@ def pheno1_test(modelWh, modelPu):
         
     return llDict
 
+
+def get_mating_obs(species1, species2, progeny):
+    return (species1.rvs(1)[0], species2.rvs(1)[0], progeny)
+
+
+def mating_test(species, priors=None, **kwargs):
+    'generate 2 x 2 test of all possible mating combinations'
+    if not priors:
+        priors = (1./len(species),) * len(species)
+    scm = robomendel.SpeciesCrossModel(species, priors, **kwargs)
+    mstate = model.LinearState('mating', scm)
+    prior = model.StateGraph({'START':{mstate:1}})
+    branches = model.BranchGenerator('chi', prior, iterTag='matingID')
+    stop = model.StopState(useObsLabel=False)
+    term = model.StateGraph({mstate:{stop:1.}})
+    dg = model.DependencyGraph({'START':branches, 'chi':{'chi':term}})
+
+    obsSet = model.ObsSet('mating obs')
+    obsSet.add_obs(get_mating_obs(species[0], species[0], True), matingID=0)
+    obsSet.add_obs(get_mating_obs(species[0], species[1], False), matingID=1)
+    obsSet.add_obs(get_mating_obs(species[0], species[0], False), matingID=2)
+    obsSet.add_obs(get_mating_obs(species[0], species[1], True), matingID=3)
+    
+    m = model.Model(dg, obsSet)
+    logPobs = m.calc_fb()
+    llDict = m.posterior_ll()
+
+    for matingID,t in enumerate(((0,0,True), (0,1,False),
+                                 (0,0,False), (0,1,True))):
+        obsLabel = obsSet.get_subset(matingID=matingID)
+        print 'mating %s:\tlogP = %1.3f, %1.3f, %1.3f' % \
+              tuple([str(t)] + llDict[obsLabel])
+        

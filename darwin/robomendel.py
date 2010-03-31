@@ -5,6 +5,7 @@ import random
 from scipy import stats
 from mendel import *
 from entropy import *
+import model
 import numpy
 
 # http://en.wikipedia.org/wiki/Multinomial_distribution 
@@ -121,10 +122,10 @@ class SpeciesCrossModel(object):
         and also that parent1 & parent2 are otherwise independent.
 
         Returns p(parent1), p(parent2|parent1), p(progeny|parent1, parent2)'''
-        pMatch = 0.
+        pMatch = pSum1 = pSum2 = 0.
         for i,sp in enumerate(self.species):
-            p1 = priors[i] * sp.pdf(parent1)
-            p2 = priors[i] * sp.pdf(parent2)
+            p1 = self.priors[i] * sp.pdf(parent1)
+            p2 = self.priors[i] * sp.pdf(parent2)
             pMatch += p1 * p2 # compute diagonal
             pSum1 += p1
             pSum2 += p2
@@ -137,3 +138,10 @@ class SpeciesCrossModel(object):
             pMatch *= self.pFail
         return pSum1, pSum2, (pMatch + pMismatch) / (pSum1 * pSum2)
 
+    def pdf(self, obs):
+        '''provide scipy.stats style pdf() interface.
+        Expects (parent1, parent2, progeny) observation vector.'''
+        return self.p_obs(obs[0], obs[1], obs[2])
+
+
+        
