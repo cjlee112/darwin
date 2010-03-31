@@ -131,7 +131,7 @@ class NodeLabel(object):
         'Get count of descendants'
         return len(self.graph[self])
 
-class NodeGraph(object):
+class DependencyGraph(object):
     '''Graph of the form {source:{target:edge}}
     where source, target are NodeLabel objects, and
     edge is the state graph specifying the state transitions from source

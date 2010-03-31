@@ -223,8 +223,8 @@ provided in our input.  We name our phenotype variable `chi`,
 and give it the initial state transitions provided by our priors::
 
    >>> branches = model.BranchGenerator('chi', prior, iterTag='plantID')
-   >>> dg = model.Model(model.NodeGraph({'START':branches,
-   ...                                   'chi':{'chi':term}}))
+   >>> dg = model.Model(model.DependencyGraph({'START':branches,
+   ...                                         'chi':{'chi':term}}))
    ...
 
 Finally, we package each plant's observations in an *observation graph*
