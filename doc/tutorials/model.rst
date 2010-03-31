@@ -101,7 +101,7 @@ Generating simulated observations
 
 We first construct our HMM as a composite of these three state graphs::
 
-    >>> hmm = NodeGraph({'theta':{'theta':sg}, 'START':{'theta':prior}})
+    >>> hmm = DependencyGraph({'theta':{'theta':sg}, 'START':{'theta':prior}})
 
 We have created a single variable labelled `theta` that follows
 the states and transitions specified by our state graph `sg`.  

@@ -15,7 +15,7 @@ def number_test(program='12 33 495'):
 
     prior = StateGraph({'START':{number:1./2., space:1./2.}})
 
-    hmm = NodeGraph({'theta':{'theta':sg}, 'START':{'theta':prior}})
+    hmm = DependencyGraph({'theta':{'theta':sg}, 'START':{'theta':prior}})
 
     obsLabel = ObsSequenceLabel(program)
     m = Model(hmm, obsLabel)
@@ -38,18 +38,18 @@ def math_test(program='2+7'):
     sg = StateGraph({number:{plus:1.}, plus:{mathExpr:1.},
                      mathExpr:{stopNow:1.}})
     prior = StateGraph({'START':{number:1.}})
-    subgraph = NodeGraph({'theta':{'theta':sg}, 'START':{'theta':prior}})
+    subgraph = DependencyGraph({'theta':{'theta':sg}, 'START':{'theta':prior}})
     addExpr.subgraph = subgraph
 
     sg = StateGraph({number:{stopNow:1.}, addExpr:{stopNow:1.}})
     prior = StateGraph({'START':{number:0.5, addExpr:0.5}})
-    subgraph = NodeGraph({'theta':{'theta':sg}, 'START':{'theta':prior}})
+    subgraph = DependencyGraph({'theta':{'theta':sg}, 'START':{'theta':prior}})
     mathExpr.subgraph = subgraph
    
     stopIfDone = LinearStateStop() # stop if obs exhausted
     sg = StateGraph({mathExpr:{mathExpr:1., stopIfDone:1.}})
     prior = StateGraph({'START':{mathExpr:1.}})
-    hmm = NodeGraph({'theta':{'theta':sg}, 'START':{'theta':prior}})
+    hmm = DependencyGraph({'theta':{'theta':sg}, 'START':{'theta':prior}})
     obsLabel = ObsSequenceLabel(program)
     m = Model(hmm, obsLabel)
 
