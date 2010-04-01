@@ -60,17 +60,20 @@ def mating_test(species, priors=None, **kwargs):
     dg = model.DependencyGraph({'START':branches, 'chi':{'chi':term}})
 
     obsSet = model.ObsSet('mating obs')
-    obsSet.add_obs(get_mating_obs(species[0], species[0], True), matingID=0)
-    obsSet.add_obs(get_mating_obs(species[0], species[1], False), matingID=1)
-    obsSet.add_obs(get_mating_obs(species[0], species[0], False), matingID=2)
-    obsSet.add_obs(get_mating_obs(species[0], species[1], True), matingID=3)
+    obsSet.add_obs(species[0].rvs(3), matingID=0)
+    obsSet.add_obs((species[0].rvs(1)[0], species[1].rvs(1)[0], None),
+                   matingID=1)
+    obsSet.add_obs((species[0].rvs(1)[0], species[0].rvs(1)[0], None),
+                   matingID=2)
+    obsSet.add_obs((species[0].rvs(1)[0], species[1].rvs(1)[0],
+                    species[0].rvs(1)[0]), matingID=3)
     
     m = model.Model(dg, obsSet)
     logPobs = m.calc_fb()
     llDict = m.posterior_ll()
 
-    for matingID,t in enumerate(((0,0,True), (0,1,False),
-                                 (0,0,False), (0,1,True))):
+    for matingID,t in enumerate(((0,0,0), (0,1,None),
+                                 (0,0,None), (0,1,0))):
         obsLabel = obsSet.get_subset(matingID=matingID)
         print 'mating %s:\tlogP = %1.3f, %1.3f, %1.3f' % \
               tuple([str(t)] + llDict[obsLabel])

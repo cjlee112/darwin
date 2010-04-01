@@ -122,20 +122,26 @@ class SpeciesCrossModel(object):
         and also that parent1 & parent2 are otherwise independent.
 
         Returns p(parent1), p(parent2|parent1), p(progeny|parent1, parent2)'''
-        pMatch = pSum1 = pSum2 = 0.
+        pMatch = pSum1 = pSum2 = pSum3 = 0.
         for i,sp in enumerate(self.species):
             p1 = self.priors[i] * sp.pdf(parent1)
             p2 = self.priors[i] * sp.pdf(parent2)
-            pMatch += p1 * p2 # compute diagonal
             pSum1 += p1
             pSum2 += p2
-        pMismatch = pSum1 * pSum2 - pMatch # subtract diagonal
-        if progeny: # fixed probability for inter-species progeny
-            pMismatch *= self.pHybrid
-            pMatch *= (1. - self.pFail)
-        else: # no progeny
+            if progeny is None: # no progeny
+                pMatch += p1 * p2 # compute diagonal
+            else:
+                p3 = self.priors[i] * sp.pdf(progeny)
+                pMatch += p1 * p2 * p3 # compute diagonal
+                pSum3 += p3
+        if progeny is None: # no progeny
+            pMismatch = pSum1 * pSum2 - pMatch # subtract diagonal
             pMismatch *= (1. - self.pHybrid)
             pMatch *= self.pFail
+        else: # fixed probability for inter-species progeny
+            pMismatch = pSum1 * pSum2 * pSum3 - pMatch # subtract diagonal
+            pMismatch *= self.pHybrid
+            pMatch *= (1. - self.pFail)
         return pSum1, pSum2, (pMatch + pMismatch) / (pSum1 * pSum2)
 
     def pdf(self, obs):
