@@ -159,18 +159,15 @@ class DependencyGraph(object):
         results = {}
         for label,edge in d.items():
             if not isinstance(label, self.labelClass):
-                label = self.get_target(label, edge)
+                label = self.get_node(label)
             results[label] = edge
         return results
 
-    def get_target(self, label, edge):
-        return self.labelClass(self, label) # target doesn't use edge value
-
     def get_start(self, **kwargs):
         'get START node for this graph'
-        return self.get_label('START', **kwargs)
+        return self.get_node('START', **kwargs)
 
-    def get_label(self, label, *args, **kwargs):
+    def get_node(self, label, *args, **kwargs):
         'construct label object with specified args'
         return self.labelClass(self, label, *args, **kwargs)
 
@@ -343,7 +340,7 @@ class BranchGenerator(object):
             try: # already a NodeLabel
                 newLabel = self.label.get_obs_label(obsLabel)
             except AttributeError: # need to create a new NodeLabel
-                newLabel = nodeLabel.graph.get_target(self.label, self.stateGraph)
+                newLabel = nodeLabel.graph.get_node(self.label)
                 newLabel.obsLabel = obsLabel
             d[newLabel] = self.stateGraph
         return d

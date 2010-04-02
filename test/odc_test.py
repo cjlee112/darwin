@@ -22,7 +22,7 @@ def odc_test(p6=.5, n=100):
     llDict = m.posterior_ll()
     for i in range(n): # print posteriors
         obsLabel = ObsSequenceLabel(obs, i, 1)
-        nodeLabel = hmm.get_label('theta', obsLabel=obsLabel)
+        nodeLabel = hmm.get_node('theta', obsLabel=obsLabel)
         nodeF = Node(F, nodeLabel)
         nodeL = Node(L, nodeLabel)
         print '%s:%0.3f\t%s:%0.3f\tTRUE:%s,%d,%0.3f' % \
