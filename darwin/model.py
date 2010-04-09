@@ -123,9 +123,14 @@ class Variable(object):
             parent = self.parent
         return self.__class__(self.graph, self.label, obsLabel, parent)
 
-    def get_children(self, **kwargs):
-        '''Get child,obs pairs for child nodes of this node '''
-        return self.graph.__getitem__(self, **kwargs)
+    def get_obs(self):
+        'return observations, filtered using tags if present'
+        try:
+            tags = self.tags
+        except AttributeError:
+            return self.obsLabel.get_obs()
+        else:
+            return self.obsLabel.get_subset(**tags).get_obs()
 
     def __len__(self):
         'Get count of descendants'
@@ -137,21 +142,26 @@ class Segment(object):
     state graphs representing their allowed state --> state transitions.'''
     labelClass = Variable
 
-    def __init__(self, seq, source='START'):
+    def __init__(self, seq):
         '''seq should be list of (destLabel,stateGraph) pairs.
         destLabel can be a Variable object (allowing you to
         specify a cross-connection to a node in another graph),
         or simply any Python value, in which case it will be treated
         as label for creating a Variable bound to this LabelGraph.'''
-        graph = {}
-        for dest, stateGraph in seq: # save as simple linear graph
-            graph[source] = dest, stateGraph
-            source = dest
-        self.graph = graph
+        if len(seq) % 2 == 0:
+            raise ValueError(
+                '''seq must consist of (label, transition, label...)
+                It must contain an odd number of arguments!''')
+        self.graph = {}
+        for i in range(len(seq) - 1, 2): # save as simple linear graph
+            self.graph[seq[i]] = seq[i + 1], seq[i + 2]
+        self.graph[len(seq) - 1] = None # terminal 
 
     def get_next(self, fromNode, parent=None):
         'get dict of {targetNode:pTransition} pairs'
         try:
+            if fromNode.var.graph is not self:
+                raise KeyError
             dest, stateGraph = self.graph[fromNode.var.label]
         except (KeyError, AttributeError):
             raise KeyError('node not in this graph')
@@ -188,6 +198,18 @@ class Segment(object):
             obs.append(dest.var.obsLabel.get_obs())
             node = dest
         return s,tuple(obs)
+
+
+class SegmentGraph(object):
+    def __init__(self, edges):
+        '''edges must be a dict of incoming edges of the form
+        {targetSegment:(stateGraph, sourceSegment1, sourceSegment2...)}'''
+        self.rev = edges
+        g = {}
+        for target, edge in edges.items(): # construct forward graph
+            for source in edge[1:]:
+                g.setdefault(source, {})[target] = edge[0] # forward edge
+        self.g = g
 
 
 class ObsExhaustedError(IndexError):
@@ -488,7 +510,7 @@ class State(object):
                 return self.emission.pmf(obs)
             except AttributeError:
                 return self.emission.pdf(obs)
-        obsList = node.var.obsLabel.get_obs()
+        obsList = node.var.get_obs() # use filtered obs for this variable
         if len(obsList) > 0:
             try:
                 return numpy.log(get_plist(obsList))
