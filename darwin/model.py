@@ -93,11 +93,11 @@ class StartNode(Node):
 
 class StopNode(Node):
     def __init__(self, graph, obsLabel=None, parent=None):
-        Node.__init__(self, 'STOP', NodeLabel(graph, 'STOP', obsLabel, parent))
+        Node.__init__(self, 'STOP', Variable(graph, 'STOP', obsLabel, parent))
         self.isub = 'STOP' # dummy value
 
 
-class NodeLabel(object):
+class Variable(object):
     '''Reference to a specific vertex in a graph'''
     def __init__(self, graph, label, obsLabel=None, parent=None):
         self.graph = graph
@@ -131,37 +131,33 @@ class NodeLabel(object):
         'Get count of descendants'
         return len(self.graph[self])
 
-class DependencyGraph(object):
-    '''Graph of the form {source:{target:edge}}
-    where source, target are NodeLabel objects, and
-    edge is the state graph specifying the state transitions from source
-    to target.'''
-    labelClass = NodeLabel
 
-    def __init__(self, graph):
-        '''graph should be dict of {sourceLabel:{destLabel:stateGraph}}
-        edges.  destLabel can be a NodeLabel object (allowing you to
+class Segment(object):
+    '''Unbranched segment of one or more Variables linked by
+    state graphs representing their allowed state --> state transitions.'''
+    labelClass = Variable
+
+    def __init__(self, seq, source='START'):
+        '''seq should be list of (destLabel,stateGraph) pairs.
+        destLabel can be a Variable object (allowing you to
         specify a cross-connection to a node in another graph),
         or simply any Python value, in which case it will be treated
-        as label for creating a NodeLabel bound to this LabelGraph.'''
+        as label for creating a Variable bound to this LabelGraph.'''
+        graph = {}
+        for dest, stateGraph in seq: # save as simple linear graph
+            graph[source] = dest, stateGraph
+            source = dest
         self.graph = graph
 
-    def __getitem__(self, node):
-        'get dict of {target NodeLabel:stateGraph} pairs'
+    def get_next(self, fromNode, parent=None):
+        'get dict of {targetNode:pTransition} pairs'
         try:
-            if node.graph is not self:
-                raise KeyError
-            d = self.graph[node.label]
+            dest, stateGraph = self.graph[fromNode.var.label]
         except (KeyError, AttributeError):
             raise KeyError('node not in this graph')
-        if callable(d): # treat as function for generating target dict
-            d = d(node)
-        results = {}
-        for label,edge in d.items():
-            if not isinstance(label, self.labelClass):
-                label = self.get_node(label)
-            results[label] = edge
-        return results
+        if not isinstance(dest, self.labelClass):
+            dest = self.get_node(dest)
+        return stateGraph(fromNode, dest, parent=parent)
 
     def get_start(self, **kwargs):
         'get START node for this graph'
@@ -182,14 +178,12 @@ class DependencyGraph(object):
         for i in range(n):
             p = random.random()
             total = 0.
-            for stateGroup in node.get_children():
-                for dest,edge in stateGroup.items(): # choose next state
-                    if dest.state == 'STOP':
-                        continue
-                    total += edge
-                    if p <= total:
-                        break
-                break # this algorithm can only handle linear chain ...
+            for dest,edge in self.get_next(node).items(): # choose next state
+                if dest.state == 'STOP':
+                    continue
+                total += edge
+                if p <= total:
+                    break
             s.append(dest)
             obs.append(dest.var.obsLabel.get_obs())
             node = dest
@@ -329,7 +323,7 @@ class BranchGenerator(object):
         self.tags = tags
 
     def __call__(self, nodeLabel):
-        'return {NodeLabel:stateGraph} dict'
+        'return {Variable:stateGraph} dict'
         d = {}
         subset = nodeLabel.obsLabel # assume obsLabel iterable
         if self.tags: # filter using these tag constraints
@@ -337,9 +331,9 @@ class BranchGenerator(object):
         if self.iterTag: # generate branches for each value of this tag
             subset = subset.get_tag_dict(self.iterTag).values()
         for obsLabel in subset:
-            try: # already a NodeLabel
+            try: # already a Variable
                 newLabel = self.label.get_obs_label(obsLabel)
-            except AttributeError: # need to create a new NodeLabel
+            except AttributeError: # need to create a new Variable
                 newLabel = nodeLabel.graph.get_node(self.label)
                 newLabel.obsLabel = obsLabel
             d[newLabel] = self.stateGraph
@@ -449,17 +443,17 @@ class StateGraph(object):
         '''graph supplies the allowed state-state transitions and probabilities'''
         self.graph = graph
 
-    def __call__(self, fromNode, targetLabel, state=None, parent=None):
+    def __call__(self, fromNode, targetVar, state=None, parent=None):
         '''return dict of {label:{node:pTransition}} from fromNode'''
         results = {}
         if state is None:
             state = fromNode.state
-        if targetLabel.obsLabel is not None:
-            obsLabel = targetLabel.obsLabel
+        if targetVar.obsLabel is not None:
+            obsLabel = targetVar.obsLabel
         else:
             obsLabel = fromNode.var.obsLabel
         for dest,edge in self.graph[state].items():
-            newNode = dest(fromNode, targetLabel, obsLabel, edge, parent)
+            newNode = dest(fromNode, targetVar, obsLabel, edge, parent)
             if newNode:
                 results[newNode] = edge
         return results
@@ -475,10 +469,10 @@ class State(object):
         self.emission = emission
         self.name = name
 
-    def __call__(self, fromNode, targetLabel, obsLabel, edge, parent):
+    def __call__(self, fromNode, targetVar, obsLabel, edge, parent):
         '''default move operator just echoes the next obs'''
         try:
-            newLabel = targetLabel.get_obs_label(obsLabel.get_next(state=self),
+            newLabel = targetVar.get_obs_label(obsLabel.get_next(state=self),
                                                  parent)
         except ObsExhaustedError:
             return None
@@ -520,8 +514,8 @@ class FilterState(State):
         State.__init__(self, name, emission)
         self.tags = tags
         
-    def __call__(self, fromNode, targetLabel, obsLabel, edge, parent):
-        newLabel = targetLabel.get_obs_label(obsLabel.get_subset(** self.tags),
+    def __call__(self, fromNode, targetVar, obsLabel, edge, parent):
+        newLabel = targetVar.get_obs_label(obsLabel.get_subset(** self.tags),
                                              parent)
         return Node(self, newLabel)
 
@@ -531,9 +525,9 @@ class SilentState(State):
     def __init__(self, name):
         self.name = name
 
-    def __call__(self, fromNode, targetLabel, obsLabel, edge, parent):
+    def __call__(self, fromNode, targetVar, obsLabel, edge, parent):
         obsLabel = obsLabel.get_next(empty=True) # we emit nothing
-        newLabel = NodeLabel(targetLabel.graph, targetLabel.label, obsLabel,
+        newLabel = Variable(targetVar.graph, targetVar.label, obsLabel,
                              parent)
         return Node(self, newLabel)
 
@@ -541,31 +535,31 @@ class StopState(State):
     def __init__(self, useObsLabel=True):
         State.__init__(self, 'STOP', None)
         self.useObsLabel = useObsLabel
-    def __call__(self, fromNode, targetLabel, obsLabel, edge, parent):
+    def __call__(self, fromNode, targetVar, obsLabel, edge, parent):
         if self.useObsLabel:
             obsLabel = obsLabel.get_next(empty=True) # we emit nothing
         else:
             obsLabel = None
-        return StopNode(targetLabel.graph, obsLabel, parent)
+        return StopNode(targetVar.graph, obsLabel, parent)
         
 class LinearStateStop(StopState):
-    def __call__(self, fromNode, targetLabel, obsLabel, edge, parent):
+    def __call__(self, fromNode, targetVar, obsLabel, edge, parent):
         '''Only return STOP node if at the end of the obs set '''
-        if not State.__call__(self, fromNode, targetLabel, obsLabel, edge, parent):
+        if not State.__call__(self, fromNode, targetVar, obsLabel, edge, parent):
             # exhausted obs, so transition to STOP
-            return StopNode(targetLabel.graph, None, parent)
+            return StopNode(targetVar.graph, None, parent)
 
 class SeqMatchState(State):
     def __init__(self, name, emission, match_f):
         State.__init__(self, name, emission)
         self.match_f = match_f
 
-    def __call__(self, fromNode, targetLabel, obsLabel, edge, parent):
+    def __call__(self, fromNode, targetVar, obsLabel, edge, parent):
         if obsLabel.stop < len(obsLabel.seq):
             s = self.match_f(obsLabel.seq[obsLabel.stop:]) # run matcher
             if s:
                 obsLabel = obsLabel.get_next(length=len(s))
-                return Node(self, targetLabel.get_obs_label(obsLabel, parent))
+                return Node(self, targetVar.get_obs_label(obsLabel, parent))
 
 
 class EmissionDict(dict):
