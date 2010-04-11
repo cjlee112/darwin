@@ -203,7 +203,9 @@ class Segment(object):
 class SegmentGraph(object):
     def __init__(self, edges):
         '''edges must be a dict of incoming edges of the form
-        {targetSegment:(stateGraph, sourceSegment1, sourceSegment2...)}'''
+        {targetVariable:(stateGraph, sourceVariable1, sourceVariable2...)}
+        where Variables should be start / end of the segments that you
+        wish to connect.'''
         self.rev = edges
         g = {}
         for target, edge in edges.items(): # construct forward graph
