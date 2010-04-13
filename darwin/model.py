@@ -273,14 +273,36 @@ class Segment(object):
     '''Unbranched segment of one or more Variables linked by compiled
     state graphs representing their allowed state --> state transitions.'''
 
-    def __init__(self):
+    def __init__(self, startVar):
         self.g = {}
         self.gRev = {}
+        self.varStates = {}
+        self.startVar = startVar
 
     def add_edge(self, source, dest, edge):
         self.g.setdefault(source, {})[dest] = edge
         self.gRev.setdefault(dest, {})[source] = edge
+        self.varStates.setdefault(source.var, {})[source] = 0
+        self.varStates.setdefault(dest.var, {})[dest] = 0
 
+    def mark_end(self, node):
+        self.stopVar = node.var
+
+
+def p_segment(dest, f, logPobsDict, g):
+    'symmetric calc for either forward or backwards prob on an unbranched segment'
+    logP = []
+    for src, edge in g[dest].items():
+        try:
+            logP.append(f[src] + logPobsDict[src] + safe_log(edge))
+        except KeyError:  # need to compute this value
+            self.p_segment(src, f, logPobsDict, g)
+            logP.append(f[src] + logPobsDict[src] + safe_log(edge))
+    if logP: # non-empty list
+        f[dest] = log_sum_list(logP)
+    else:  # zero probability
+        f[dest] = neginf
+        
 
 class SegmentGraph(object):
     def __init__(self):
@@ -294,9 +316,10 @@ class SegmentGraph(object):
             return self.add_multi_condition(source, dest, edge)
         if dest.var not in self.varDict:
             if multiDest: # link new segment into segment graph
-                self.varDict[dest.var] = Segment()
+                self.varDict[dest.var] = Segment(dest.var)
                 self.g.setdefault(source.var, []).append(dest.var)
                 self.gRevVars[dest.var] = (source.var,)
+                self.varDict[source.var].mark_end(source)
             else: # continue existing segment
                 self.varDict[dest.var] = self.varDict[source.var]
         if multiDest:
@@ -306,9 +329,10 @@ class SegmentGraph(object):
 
     def add_multi_condition(self, source, destVar, edge):
         if destVar not in self.varDict:
-            self.varDict[destVar] = Segment()
+            self.varDict[destVar] = Segment(destVar)
             self.g.setdefault(source.var, []).append(destVar)
             self.gRevVars[destVar] = edge.conditions
+            self.varDict[source.var].mark_end(source)
         for sourceVector, dest, e in edge.edges():
             self.gRev[dest.var].setdefault(sourceVector, {})[dest] = e
         
