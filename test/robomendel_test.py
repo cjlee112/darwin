@@ -16,7 +16,7 @@ def pheno1_test(modelWh, modelPu):
     stop = model.StopState(useObsLabel=False)
     term = model.StateGraph({pstate:{stop:1.}, wstate:{stop:1.}})
     branches = model.BranchGenerator('chi', prior, iterTag='plantID')
-    dg = model.DependencyGraph({'START':branches, 'chi':{'chi':term}})
+    dg = model.DependencyGraph({'START':{branches:{}}, 'chi':{'chi':term}})
 
     obsSet = model.ObsSet('plants')
     for plant in range(2): # two white plants
@@ -57,7 +57,7 @@ def mating_test(species, priors=None, **kwargs):
     branches = model.BranchGenerator('chi', prior, iterTag='matingID')
     stop = model.StopState(useObsLabel=False)
     term = model.StateGraph({mstate:{stop:1.}})
-    dg = model.DependencyGraph({'START':branches, 'chi':{'chi':term}})
+    dg = model.DependencyGraph({'START':{branches:{}}, 'chi':{'chi':term}})
 
     obsSet = model.ObsSet('mating obs')
     obsSet.add_obs(species[0].rvs(3), matingID=0)

@@ -55,7 +55,7 @@ class Node(object):
         results = []
         if fromNode is None:
             fromNode = self
-        for varLabel, stateGraph in self.var.get_children().items():
+        for varLabel, stateGraph in self.var.graph[self].items():
             results.append(stateGraph(fromNode, varLabel, state=self.state, parent=parent))
         return results
 
@@ -137,44 +137,66 @@ class Variable(object):
         return len(self.graph[self])
 
 
-class Segment(object):
-    '''Unbranched segment of one or more Variables linked by
-    state graphs representing their allowed state --> state transitions.'''
+class MultiCondition(object):
+    def __init__(self, conditions, target, stateGraph):
+        self.conditions = conditions
+        self.target = target
+        self.stateGraph = stateGraph
+
+    def __call__(self, node):
+        pass
+
+
+class DependencyGraph(object):
     labelClass = Variable
 
-    def __init__(self, seq):
-        '''seq should be list of (destLabel,stateGraph) pairs.
-        destLabel can be a Variable object (allowing you to
+    def __init__(self, graph):
+        '''graph should be dict of {sourceLabel:{destLabel:stateGraph}}
+        edges.  destLabel can be a Variable object (allowing you to
         specify a cross-connection to a node in another graph),
         or simply any Python value, in which case it will be treated
-        as label for creating a Variable bound to this LabelGraph.'''
-        if len(seq) % 2 == 0:
-            raise ValueError(
-                '''seq must consist of (label, transition, label...)
-                It must contain an odd number of arguments!''')
-        self.graph = {}
-        for i in range(len(seq) - 1, 2): # save as simple linear graph
-            self.graph[seq[i]] = seq[i + 1], seq[i + 2]
-        self.graph[len(seq) - 1] = None # terminal 
+        as label for creating a Variable.'''
+        d = {}
+        for k, targets in graph.items():
+            if isinstance(k, tuple): # multiple conditions
+                if isinstance(k[0], self.labelClass):
+                    sourceVars = k # list of variables 
+                    k = [var.label for var in k] # just their labels ??
+                else:
+                    sourceVars = [self.get_var(label) for label in k]
+                for destVar, stateGraph in targets.items():
+                    multiCond = MultipleCondition(sourceVars, destVar, stateGraph)
+                    for source in k:
+                        d.setdefault(source, {})[multiCond] = {}
+            else: # single condition
+                d.setdefault(k, {}).update(targets)                    
+        self.graph = d
 
-    def get_next(self, fromNode, parent=None):
-        'get dict of {targetNode:pTransition} pairs'
+    def __getitem__(self, node):
+        'get dict of {targetVariable:stateGraph} pairs'
         try:
-            if fromNode.var.graph is not self:
+            if node.var.graph is not self:
                 raise KeyError
-            dest, stateGraph = self.graph[fromNode.var.label]
+            d = self.graph[node.var.label]
         except (KeyError, AttributeError):
-            raise KeyError('node not in this graph')
-        if not isinstance(dest, self.labelClass):
-            dest = self.get_node(dest)
-        return stateGraph(fromNode, dest, parent=parent)
+            raise KeyError('variable not in this graph')
+        results = {}
+        for label,edge in d.items():
+            if callable(label): # treat as function for generating target dict
+                for label, edge in label(node, **edge).items():
+                    results[self.get_var(label)] = edge
+            else:
+                results[self.get_var(label)] = edge
+        return results
 
     def get_start(self, **kwargs):
         'get START node for this graph'
-        return self.get_node('START', **kwargs)
+        return self.get_var('START', **kwargs)
 
-    def get_node(self, label, *args, **kwargs):
+    def get_var(self, label, *args, **kwargs):
         'construct label object with specified args'
+        if isinstance(label, self.labelClass):
+            return label # already wrapped, no need to do anything
         return self.labelClass(self, label, *args, **kwargs)
 
     def __hash__(self):
@@ -188,32 +210,93 @@ class Segment(object):
         for i in range(n):
             p = random.random()
             total = 0.
-            for dest,edge in self.get_next(node).items(): # choose next state
-                if dest.state == 'STOP':
-                    continue
-                total += edge
-                if p <= total:
-                    break
+            for stateGroup in node.get_children():
+                for dest,edge in stateGroup.items(): # choose next state
+                    if dest.state == 'STOP':
+                        continue
+                    total += edge
+                    if p <= total:
+                        break
+                break # this algorithm can only handle linear chain ...
             s.append(dest)
             obs.append(dest.var.obsLabel.get_obs())
             node = dest
         return s,tuple(obs)
 
 
+class Segment(object):
+    '''Unbranched segment of one or more Variables linked by
+    state graphs representing their allowed state --> state transitions.'''
+
+    def __init__(self, rank):
+        self.rank = rank
+        self.g = {}
+        self.gRev = {}
+
+    def add_edge(self, source, dest, edge):
+        self.g.setdefault(source, {})[dest] = edge
+        self.gRev.setdefault(dest, {})[source] = edge
+
+    ## def __init__(self, seq):
+    ##     '''seq should be list of (destLabel,stateGraph) pairs.
+    ##     destLabel can be a Variable object (allowing you to
+    ##     specify a cross-connection to a node in another graph),
+    ##     or simply any Python value, in which case it will be treated
+    ##     as label for creating a Variable bound to this LabelGraph.'''
+    ##     if len(seq) % 2 == 0:
+    ##         raise ValueError(
+    ##             '''seq must consist of (label, transition, label...)
+    ##             It must contain an odd number of arguments!''')
+    ##     self.graph = {}
+    ##     for i in range(len(seq) - 1, 2): # save as simple linear graph
+    ##         self.graph[seq[i]] = seq[i + 1], seq[i + 2]
+    ##     self.graph[len(seq) - 1] = None # terminal 
+
+    ## def get_next(self, fromNode, parent=None):
+    ##     'get dict of {targetNode:pTransition} pairs'
+    ##     try:
+    ##         if fromNode.var.graph is not self:
+    ##             raise KeyError
+    ##         dest, stateGraph = self.graph[fromNode.var.label]
+    ##     except (KeyError, AttributeError):
+    ##         raise KeyError('node not in this graph')
+    ##     if not isinstance(dest, self.labelClass):
+    ##         dest = self.get_node(dest)
+    ##     return stateGraph(fromNode, dest, parent=parent)
+
+
 class SegmentGraph(object):
-    def __init__(self, edges):
-        '''edges must be a dict of incoming edges of the form
-        {targetVariable:(stateGraph, sourceVariable1, sourceVariable2...)}
-        where Variables should be start / end of the segments that you
-        wish to connect.'''
-        self.rev = edges
-        g = {}
-        for target, edge in edges.items(): # construct forward graph
-            for source in edge[1:]:
-                g.setdefault(source, {})[target] = edge[0] # forward edge
-        self.g = g
+    def __init__(self):
+        ## '''edges must be a dict of incoming edges of the form
+        ## {targetVariable:(stateGraph, sourceVariable1, sourceVariable2...)}
+        ## where Variables should be start / end of the segments that you
+        ## wish to connect.'''
+        ## self.rev = edges
+        ## g = {}
+        ## for target, edge in edges.items(): # construct forward graph
+        ##     for source in edge[1:]:
+        ##         g.setdefault(source, {})[target] = edge[0] # forward edge
+        ## self.g = g
+        self.graph = {}
+        self.varDict = {}
 
+    def add_edge(self, source, dest, edge, multiDest):
+        try:
+            segment = self.varDict[dest.var]
+        except KeyError:
+            if multiDest: # link new segment into segment graph
+                d = self.graph.setdefault(source.var, {})
+                segment = self.varDict[dest.var] = Segment(len(d))
+                d[dest.var] = {} # record dependency order
+            else: # continue existing segment
+                segment = self.varDict[dest.var] = self.varDict[source.var]
+        if multiDest:
+            self.graph[source.var][dest.var].setdefault(source.state, {}) \
+                                  [dest.state] = edge
+        else:
+            segment.add_edge(source, dest, edge)
 
+                        
 class ObsExhaustedError(IndexError):
     pass
 
@@ -346,10 +429,10 @@ class BranchGenerator(object):
         self.iterTag = iterTag
         self.tags = tags
 
-    def __call__(self, nodeLabel):
+    def __call__(self, node):
         'return {Variable:stateGraph} dict'
         d = {}
-        subset = nodeLabel.obsLabel # assume obsLabel iterable
+        subset = node.var.obsLabel # assume obsLabel iterable
         if self.tags: # filter using these tag constraints
             subset = subset.get_subset(** self.tags)
         if self.iterTag: # generate branches for each value of this tag
@@ -358,7 +441,7 @@ class BranchGenerator(object):
             try: # already a Variable
                 newLabel = self.label.get_obs_label(obsLabel)
             except AttributeError: # need to create a new Variable
-                newLabel = nodeLabel.graph.get_node(self.label)
+                newLabel = node.var.graph.get_var(self.label)
                 newLabel.obsLabel = obsLabel
             d[newLabel] = self.stateGraph
         return d
@@ -643,9 +726,11 @@ def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent):
         fromNodes = (node,) # generate edges from this node
     for fromNode in fromNodes:
         targets = []
-        for stateGroup in node.get_children(fromNode, parent):
+        variables = node.get_children(fromNode, parent)
+        multiDest = len(variables) > 1
+        for varStates in variables:
             d = {}
-            for dest,edge in stateGroup.items(): # multiple states sum...
+            for dest,edge in varStates.items(): # multiple states sum...
                 if not hasattr(dest, 'isub'):
                     dest.isub = len(targets)
                 try:
