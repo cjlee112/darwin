@@ -138,14 +138,59 @@ class Variable(object):
 
 
 class MultiCondition(object):
-    def __init__(self, conditions, target, stateGraph):
+    def __init__(self, conditions, stateGraph):
         self.conditions = conditions
-        self.target = target
         self.stateGraph = stateGraph
+        d = {}
+        for var in conditions:
+            d[var] = []
+        self.states = d
 
-    def __call__(self, node):
-        pass
+    def __call__(self, node, targetVar, state=None, parent=None):
+        self.states[node.var].append(node)
+        dest = Node(None, targetVar)
+        return {dest:MultiEdge(self, node, targetVar, parent)}
 
+
+class MultiEdge(object):
+    def __init__(self, mc, newState, targetVar, parent):
+        self.mc = mc
+        self.conditions = mc.conditions
+        self.newState = newState
+        self.vectors = self.generate_vectors(newState)
+        self.targetVar = targetVar
+        self.parent = parent
+
+    def generate_vectors(self, newState):
+        q = []
+        vectors = []
+        for var in self.conditions:
+            if var == newState.var:
+                q.append((newState,))
+            else:
+                q.append(self.mc.states[var])
+        i = 0
+        v = [None] * len(q)
+        it = [iter(l) for l in q]
+        while i >= 0:
+            while i >= 0 and i < len(q):
+                try:
+                    v[i] = it[i].next()
+                except StopIteration:
+                    it[i] = iter(q[i]) # reset iterator
+                    i -= 1 # backtrack to previous iterator
+                else:
+                    i += 1 # advance to next iterator
+            if i >= 0:
+                vectors.append(tuple(v))
+                i -= 1 # backtrack to last iterator
+        return vectors
+
+    def edges(self):
+        for vec in self.vectors:
+            for dest, edge in self.mc.stateGraph(vec, self.targetVar,
+                                                 parent=self.parent).items():
+                yield vec, dest, edge
 
 class DependencyGraph(object):
     labelClass = Variable
@@ -225,11 +270,10 @@ class DependencyGraph(object):
 
 
 class Segment(object):
-    '''Unbranched segment of one or more Variables linked by
+    '''Unbranched segment of one or more Variables linked by compiled
     state graphs representing their allowed state --> state transitions.'''
 
-    def __init__(self, rank):
-        self.rank = rank
+    def __init__(self):
         self.g = {}
         self.gRev = {}
 
@@ -237,65 +281,37 @@ class Segment(object):
         self.g.setdefault(source, {})[dest] = edge
         self.gRev.setdefault(dest, {})[source] = edge
 
-    ## def __init__(self, seq):
-    ##     '''seq should be list of (destLabel,stateGraph) pairs.
-    ##     destLabel can be a Variable object (allowing you to
-    ##     specify a cross-connection to a node in another graph),
-    ##     or simply any Python value, in which case it will be treated
-    ##     as label for creating a Variable bound to this LabelGraph.'''
-    ##     if len(seq) % 2 == 0:
-    ##         raise ValueError(
-    ##             '''seq must consist of (label, transition, label...)
-    ##             It must contain an odd number of arguments!''')
-    ##     self.graph = {}
-    ##     for i in range(len(seq) - 1, 2): # save as simple linear graph
-    ##         self.graph[seq[i]] = seq[i + 1], seq[i + 2]
-    ##     self.graph[len(seq) - 1] = None # terminal 
-
-    ## def get_next(self, fromNode, parent=None):
-    ##     'get dict of {targetNode:pTransition} pairs'
-    ##     try:
-    ##         if fromNode.var.graph is not self:
-    ##             raise KeyError
-    ##         dest, stateGraph = self.graph[fromNode.var.label]
-    ##     except (KeyError, AttributeError):
-    ##         raise KeyError('node not in this graph')
-    ##     if not isinstance(dest, self.labelClass):
-    ##         dest = self.get_node(dest)
-    ##     return stateGraph(fromNode, dest, parent=parent)
-
 
 class SegmentGraph(object):
     def __init__(self):
-        ## '''edges must be a dict of incoming edges of the form
-        ## {targetVariable:(stateGraph, sourceVariable1, sourceVariable2...)}
-        ## where Variables should be start / end of the segments that you
-        ## wish to connect.'''
-        ## self.rev = edges
-        ## g = {}
-        ## for target, edge in edges.items(): # construct forward graph
-        ##     for source in edge[1:]:
-        ##         g.setdefault(source, {})[target] = edge[0] # forward edge
-        ## self.g = g
-        self.graph = {}
-        self.varDict = {}
+        self.g = {} # {sourceVar:[destVar1, destVar2], ...}
+        self.varDict = {} # {var:segment}
+        self.gRev = {} # {destVar:{(source1, source2,...):dest}}
+        self.gRevVars = {}  # {destVar:(sourceVar1, sourceVar2, ...)}
 
     def add_edge(self, source, dest, edge, multiDest):
-        try:
-            segment = self.varDict[dest.var]
-        except KeyError:
+        if isinstance(edge, MultiEdge):
+            return self.add_multi_condition(source, dest, edge)
+        if dest.var not in self.varDict:
             if multiDest: # link new segment into segment graph
-                d = self.graph.setdefault(source.var, {})
-                segment = self.varDict[dest.var] = Segment(len(d))
-                d[dest.var] = {} # record dependency order
+                self.varDict[dest.var] = Segment()
+                self.g.setdefault(source.var, []).append(dest.var)
+                self.gRevVars[dest.var] = (source.var,)
             else: # continue existing segment
-                segment = self.varDict[dest.var] = self.varDict[source.var]
+                self.varDict[dest.var] = self.varDict[source.var]
         if multiDest:
-            self.graph[source.var][dest.var].setdefault(source.state, {}) \
-                                  [dest.state] = edge
+            self.gRev[dest.var].setdefault((source,), {})[dest] = edge
         else:
-            segment.add_edge(source, dest, edge)
+            self.varDict[dest.var].add_edge(source, dest, edge)
 
+    def add_multi_condition(self, source, destVar, edge):
+        if destVar not in self.varDict:
+            self.varDict[destVar] = Segment()
+            self.g.setdefault(source.var, []).append(destVar)
+            self.gRevVars[destVar] = edge.conditions
+        for sourceVector, dest, e in edge.edges():
+            self.gRev[dest.var].setdefault(sourceVector, {})[dest] = e
+        
                         
 class ObsExhaustedError(IndexError):
     pass
@@ -551,7 +567,7 @@ class StateGraph(object):
         self.graph = graph
 
     def __call__(self, fromNode, targetVar, state=None, parent=None):
-        '''return dict of {label:{node:pTransition}} from fromNode'''
+        '''return dict of {node:pTransition} from fromNode'''
         results = {}
         if state is None:
             state = fromNode.state
@@ -745,6 +761,7 @@ def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent):
                         g[dest] = () # prevent recursion on dest
                 if logPobs <= logPmin:
                     continue # truncate: do not recurse to dest
+                segmentGraph.add_edge(fromNode, dest, edge, multiDest) # rm next 2 lines
                 gRev.setdefault(dest, {})[fromNode] = edge # save reverse graph
                 d[dest] = edge
                 if dest not in g: # subtree not already compiled, so recurse
