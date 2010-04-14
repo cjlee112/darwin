@@ -138,28 +138,23 @@ class Variable(object):
 
 
 class MultiCondition(object):
-    def __init__(self, conditions, stateGraph):
+    def __init__(self, conditions, targetVar, stateGraph):
         self.conditions = conditions
+        self.targetVar = targetVar
         self.stateGraph = stateGraph
         d = {}
         for var in conditions:
             d[var] = []
         self.states = d
 
-    def __call__(self, node, targetVar, state=None, parent=None):
+    def __call__(self, node, parent):
         self.states[node.var].append(node)
-        dest = Node(None, targetVar)
-        return {dest:MultiEdge(self, node, targetVar, parent)}
-
-
-class MultiEdge(object):
-    def __init__(self, mc, newState, targetVar, parent):
-        self.mc = mc
-        self.conditions = mc.conditions
-        self.newState = newState
-        self.vectors = self.generate_vectors(newState)
-        self.targetVar = targetVar
-        self.parent = parent
+        l = []
+        for vec in self.generate_vectors(node):
+            for dest, edge in self.mc.stateGraph(vec, self.targetVar,
+                                                 parent=self.parent).items():
+                l.append(MultiEdge(vec, dest, edge))
+        return MultiEdgeSet(l)
 
     def generate_vectors(self, newState):
         q = []
@@ -168,7 +163,7 @@ class MultiEdge(object):
             if var == newState.var:
                 q.append((newState,))
             else:
-                q.append(self.mc.states[var])
+                q.append(self.states[var])
         i = 0
         v = [None] * len(q)
         it = [iter(l) for l in q]
@@ -186,11 +181,37 @@ class MultiEdge(object):
                 i -= 1 # backtrack to last iterator
         return vectors
 
-    def edges(self):
-        for vec in self.vectors:
-            for dest, edge in self.mc.stateGraph(vec, self.targetVar,
-                                                 parent=self.parent).items():
-                yield vec, dest, edge
+
+class MultiCondSet(object):
+    def __init__(self):
+        self.vars = {}
+
+    def add_multi_cond(self, sourceVar, multiCond):
+        self.vars.setdefault(sourceVar, []).append(multiCond)
+
+    def __call__(self, fromNode, parent):
+        l = self.vars[fromNode.var] # raise KeyError if not found
+        results = []
+        for multiCond in l:
+            results.append(multiCond(fromNode, parent))
+        return results
+            
+
+class MultiEdge(object):
+    def __init__(self, vec, dest, edge):
+        self.vec = vec
+        self.dest = dest
+        self.edge = edge
+
+
+class MultiEdgeSet(object):
+    def __init__(self, edges):
+        self.edges = edges
+
+    def items(self):
+        for edge in self.edges:
+            yield edge.dest, edge
+
 
 class DependencyGraph(object):
     labelClass = Variable
@@ -206,13 +227,12 @@ class DependencyGraph(object):
             if isinstance(k, tuple): # multiple conditions
                 if isinstance(k[0], self.labelClass):
                     sourceVars = k # list of variables 
-                    k = [var.label for var in k] # just their labels ??
                 else:
                     sourceVars = [self.get_var(label) for label in k]
                 for destVar, stateGraph in targets.items():
-                    multiCond = MultipleCondition(sourceVars, destVar, stateGraph)
-                    for source in k:
-                        d.setdefault(source, {})[multiCond] = {}
+                    multiCond = MultiCondition(sourceVars, destVar, stateGraph)
+                    for sourceVar in sourceVars: # save for generating edges
+                        multiCondSet.add_multi_cond(sourceVar, multiCond)
             else: # single condition
                 d.setdefault(k, {}).update(targets)                    
         self.graph = d
@@ -308,12 +328,12 @@ class SegmentGraph(object):
     def __init__(self):
         self.g = {} # {sourceVar:[destVar1, destVar2], ...}
         self.varDict = {} # {var:segment}
-        self.gRev = {} # {destVar:{(source1, source2,...):dest}}
+        self.gRev = {} # {destVar:{(source1, source2,...):{dest:edge}}}
         self.gRevVars = {}  # {destVar:(sourceVar1, sourceVar2, ...)}
 
     def add_edge(self, source, dest, edge, multiDest):
         if isinstance(edge, MultiEdge):
-            return self.add_multi_condition(source, dest, edge)
+            return self.add_multi_condition(dest, edge)
         if dest.var not in self.varDict:
             if multiDest: # link new segment into segment graph
                 self.varDict[dest.var] = Segment(dest.var)
@@ -327,14 +347,14 @@ class SegmentGraph(object):
         else:
             self.varDict[dest.var].add_edge(source, dest, edge)
 
-    def add_multi_condition(self, source, destVar, edge):
-        if destVar not in self.varDict:
-            self.varDict[destVar] = Segment(destVar)
-            self.g.setdefault(source.var, []).append(destVar)
-            self.gRevVars[destVar] = edge.conditions
-            self.varDict[source.var].mark_end(source)
-        for sourceVector, dest, e in edge.edges():
-            self.gRev[dest.var].setdefault(sourceVector, {})[dest] = e
+    def add_multi_condition(self, dest, edge):
+        if dest.var not in self.varDict:
+            self.varDict[dest.var] = Segment(dest.var)
+            for source in edge.vec:
+                self.g.setdefault(source.var, []).append(dest.var)
+                self.varDict[source.var].mark_end(source)
+            self.gRevVars[dest.var] = [source.var for source in edge.vec]
+        self.gRev[dest.var].setdefault(edge.vec, {})[dest] = edge.edge
         
                         
 class ObsExhaustedError(IndexError):
@@ -744,7 +764,7 @@ def compile_subgraph(g, gRev, node, b, logPobsDict, logPmin):
     gRev.setdefault(start, {})[node] = 1.
     compile_graph(g, gRev, start, b, logPobsDict, logPmin, node) # subgraph
 
-def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent):
+def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent, multiCondSet):
     '''Generate complete traversal of variable / observation / state graphs
     and return forward graph in the form {src:[{dest:edge}]} and reverse
     graph in the form {dest:{src:edge}}.  In the forward form, each
@@ -765,10 +785,14 @@ def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent):
     else:
         fromNodes = (node,) # generate edges from this node
     for fromNode in fromNodes:
+        try:
+            variables = multiCondSet(fromNode, parent) # multicondition edges
+        except KeyError:
+            variables = []
         targets = []
-        variables = node.get_children(fromNode, parent)
+        variables += node.get_children(fromNode, parent) # regular edges
         multiDest = len(variables) > 1
-        for varStates in variables:
+        for varStates in variables: # generate multiple dependencies
             d = {}
             for dest,edge in varStates.items(): # multiple states sum...
                 if not hasattr(dest, 'isub'):
@@ -789,11 +813,12 @@ def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent):
                 gRev.setdefault(dest, {})[fromNode] = edge # save reverse graph
                 d[dest] = edge
                 if dest not in g: # subtree not already compiled, so recurse
-                    compile_graph(g, gRev, dest, b, logPobsDict, logPmin,
-                                  parent)
+                    compile_graph(g, gRev, dest, b, logPobsDict, logPmin, parent,
+                                  multiCondDict)
             if d: # non-empty set of forward edges
                 targets.append(d)
         g[fromNode] = targets # save forward graph, even if empty
+
 
 def p_backwards(b, start, compiledGraph, logPobsDict):
     '''backwards probability algorithm
