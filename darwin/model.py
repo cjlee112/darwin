@@ -216,7 +216,7 @@ class MultiEdgeSet(object):
 class DependencyGraph(object):
     labelClass = Variable
 
-    def __init__(self, graph):
+    def __init__(self, graph, multiCondSet=None):
         '''graph should be dict of {sourceLabel:{destLabel:stateGraph}}
         edges.  destLabel can be a Variable object (allowing you to
         specify a cross-connection to a node in another graph),
@@ -225,11 +225,9 @@ class DependencyGraph(object):
         d = {}
         for k, targets in graph.items():
             if isinstance(k, tuple): # multiple conditions
-                if isinstance(k[0], self.labelClass):
-                    sourceVars = k # list of variables 
-                else:
-                    sourceVars = [self.get_var(label) for label in k]
-                for destVar, stateGraph in targets.items():
+                sourceVars = [self.get_var(label) for label in k]
+                for destLabel, stateGraph in targets.items():
+                    destVar = self.get_var(destLabel)
                     multiCond = MultiCondition(sourceVars, destVar, stateGraph)
                     for sourceVar in sourceVars: # save for generating edges
                         multiCondSet.add_multi_cond(sourceVar, multiCond)
@@ -316,7 +314,7 @@ def p_segment(dest, f, logPobsDict, g):
         try:
             logP.append(f[src] + logPobsDict[src] + safe_log(edge))
         except KeyError:  # need to compute this value
-            self.p_segment(src, f, logPobsDict, g)
+            p_segment(src, f, logPobsDict, g)
             logP.append(f[src] + logPobsDict[src] + safe_log(edge))
     if logP: # non-empty list
         f[dest] = log_sum_list(logP)
@@ -330,10 +328,21 @@ class SegmentGraph(object):
         self.varDict = {} # {var:segment}
         self.gRev = {} # {destVar:{(source1, source2,...):{dest:edge}}}
         self.gRevVars = {}  # {destVar:(sourceVar1, sourceVar2, ...)}
+        self.multicond_set = MultiCondSet()
+        self.stops = {}
+        self.starts = {}
 
     def add_edge(self, source, dest, edge, multiDest):
         if isinstance(edge, MultiEdge):
             return self.add_multi_condition(dest, edge)
+        elif source in self.starts: # START edge
+            self.starts[source].setdefault(dest.var, {})[dest] = edge
+            if dest.var not in self.varDict:
+                self.varDict[dest.var] = Segment(dest.var)
+            return
+        elif dest in self.stops: # STOP edge        
+            self.stops[dest][source] = edge
+            return
         if dest.var not in self.varDict:
             if multiDest: # link new segment into segment graph
                 self.varDict[dest.var] = Segment(dest.var)
@@ -355,6 +364,30 @@ class SegmentGraph(object):
                 self.varDict[source.var].mark_end(source)
             self.gRevVars[dest.var] = [source.var for source in edge.vec]
         self.gRev[dest.var].setdefault(edge.vec, {})[dest] = edge.edge
+
+    def mark_start(self, node):
+        self.starts[node] = {}
+
+    def mark_end(self, node):
+        self.stops[node] = {}
+
+    def p_backward(self, logPobsDict):
+        if len(self.starts) > 1:
+            raise ValueError('multiple starts?!')
+        start, targets = self.starts.items()[0]
+        logP = 0.
+        b = {}
+        for stop, d in self.stops.items():
+            for node, edge in d.items():
+                b[node] = safe_log(edge) # mark states with edges to STOP
+        for var, states in targets.items(): # product over multiple variables
+            l = []
+            g = self.varDict[var].g
+            for dest, edge in states.items(): # sum over multiple states
+                p_segment(dest, b, logPobsDict, g) # calculate b[dest]
+                l.append(b[dest] + safe_log(edge) + logPobsDict[dest])
+            logP += log_sum_list(l)
+        return logP
         
                         
 class ObsExhaustedError(IndexError):
@@ -544,8 +577,11 @@ class Model(object):
         self.compiledGraphRev = {}
         self.logPobsDict = {self.start:self.start.log_p_obs()}
         self.b = {}
+        self.segmentGraph = SegmentGraph()
+        self.segmentGraph.mark_start(self.start)
         compile_graph(self.compiledGraph, self.compiledGraphRev,
-                      self.start, self.b, self.logPobsDict, logPmin, None)
+                      self.start, self.b, self.logPobsDict, logPmin, None,
+                      self.segmentGraph)
 
     def clear(self):
         def del_if_found(attr):
@@ -754,7 +790,7 @@ class EmissionDict(dict):
                     break
         return obs
 
-def compile_subgraph(g, gRev, node, b, logPobsDict, logPmin):
+def compile_subgraph(g, gRev, node, b, logPobsDict, logPmin, segmentGraph):
     'recurse to subgraph of this node; creates node.stops as list of endnodes'
     node.stops = {} # for list of unique stop nodes in this subgraph
     start = StartNode(node.state.subgraph, obsLabel=node.var.obsLabel,
@@ -762,9 +798,10 @@ def compile_subgraph(g, gRev, node, b, logPobsDict, logPmin):
     logPobsDict[start] = 0.
     g[node] = ({start:1.},) # save edge from node to start of its subgraph
     gRev.setdefault(start, {})[node] = 1.
-    compile_graph(g, gRev, start, b, logPobsDict, logPmin, node) # subgraph
+    compile_graph(g, gRev, start, b, logPobsDict, logPmin, node,
+                  segmentGraph) # subgraph
 
-def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent, multiCondSet):
+def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent, segmentGraph):
     '''Generate complete traversal of variable / observation / state graphs
     and return forward graph in the form {src:[{dest:edge}]} and reverse
     graph in the form {dest:{src:edge}}.  In the forward form, each
@@ -780,13 +817,13 @@ def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent, multiCondSet):
 
     parent, if not None, must be node containing this subgraph'''
     if hasattr(node.state, 'subgraph'):
-        compile_subgraph(g, gRev, node, b, logPobsDict, logPmin)
+        compile_subgraph(g, gRev, node, b, logPobsDict, logPmin, segmentGraph)
         fromNodes = node.stops # generate edges from subgraph stop node(s)
     else:
         fromNodes = (node,) # generate edges from this node
     for fromNode in fromNodes:
-        try:
-            variables = multiCondSet(fromNode, parent) # multicondition edges
+        try:  # multicondition edges
+            variables = segmentGraph.multicond_set(fromNode, parent)
         except KeyError:
             variables = []
         targets = []
@@ -805,6 +842,7 @@ def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent, multiCondSet):
                         if parent is not None: # add to parent's stop-node list
                             parent.stops[dest] = None
                         else: # backwards probability of terminal node = 1
+                            segmentGraph.mark_end(dest)
                             b[dest] = 0.
                         g[dest] = () # prevent recursion on dest
                 if logPobs <= logPmin:
@@ -814,7 +852,7 @@ def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent, multiCondSet):
                 d[dest] = edge
                 if dest not in g: # subtree not already compiled, so recurse
                     compile_graph(g, gRev, dest, b, logPobsDict, logPmin, parent,
-                                  multiCondDict)
+                                  segmentGraph)
             if d: # non-empty set of forward edges
                 targets.append(d)
         g[fromNode] = targets # save forward graph, even if empty
