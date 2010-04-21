@@ -427,9 +427,20 @@ class ForwardDict(object):
             for sources, edge in self.parent.segmentGraph.gRev[dest.var] \
                     [dest].items():
                 l.append(self[sources[0]] + safe_log(edge))
-                self.f[dest] = log_sum_list(l)
-        else: # multicond, check for loops
-            pass
+            self.f[dest] = log_sum_list(l)
+        else: # multicond segment start
+            l = []
+            for sources, p in self.parent.segmentGraph.gRev[dest.var][dest].items():
+                logP = safe_log(p) # process non-loop branches
+                for branch in non_loop_branches(dest, sources):
+                    logP += self[branch]
+                for loopStart, branches in loop_branches(dest, sources):
+                    logP += self[loopStart] # calculate forward up to loopStart
+                    loopCalc = self.parent[loopStart] # condition on loopStart
+                    for branch in branches:
+                        logP += loopCalc[branch]
+                l.append(logP)
+            self.f[dest] = log_sum_list(l)
         return self.f[dest]
 
 
