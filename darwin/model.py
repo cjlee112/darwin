@@ -292,9 +292,9 @@ class Segment(object):
     state graphs representing their allowed state --> state transitions.'''
 
     def __init__(self, startVar):
-        self.g = {}
-        self.gRev = {}
-        self.varStates = {}
+        self.g = {} # {source:{dest:edge}}
+        self.gRev = {} # {dest:{source:edge}}
+        self.varStates = {} # {var:{state:0}}
         self.startVar = startVar
 
     def add_edge(self, source, dest, edge):
@@ -326,7 +326,7 @@ class SegmentGraph(object):
     def __init__(self):
         self.g = {} # {sourceVar:[destVar1, destVar2], ...}
         self.varDict = {} # {var:segment}
-        self.gRev = {} # {destVar:{(source1, source2,...):{dest:edge}}}
+        self.gRev = {} # {destVar:{dest:{(source1, source2,...):edge}}}
         self.gRevVars = {}  # {destVar:(sourceVar1, sourceVar2, ...)}
         self.multicond_set = MultiCondSet()
         self.stops = {}
@@ -352,7 +352,7 @@ class SegmentGraph(object):
             else: # continue existing segment
                 self.varDict[dest.var] = self.varDict[source.var]
         if multiDest:
-            self.gRev[dest.var].setdefault((source,), {})[dest] = edge
+            self.gRev[dest.var].setdefault(dest, {})[(source,)] = edge
         else:
             self.varDict[dest.var].add_edge(source, dest, edge)
 
@@ -363,7 +363,7 @@ class SegmentGraph(object):
                 self.g.setdefault(source.var, []).append(dest.var)
                 self.varDict[source.var].mark_end(source)
             self.gRevVars[dest.var] = [source.var for source in edge.vec]
-        self.gRev[dest.var].setdefault(edge.vec, {})[dest] = edge.edge
+        self.gRev[dest.var].setdefault(dest, {})[edge.vec] = edge.edge
 
     def mark_start(self, node):
         self.starts[node] = {}
@@ -388,7 +388,64 @@ class SegmentGraph(object):
                 l.append(b[dest] + safe_log(edge) + logPobsDict[dest])
             logP += log_sum_list(l)
         return logP
+
+    def seed_forward(self, condition, f):
+        'add terminations for forward calc based on condition'
+        source = condition.var
+        for destVar in self.g[source]:
+            if len(self.gRevVars[destVar]) > 1: # multicond edge
+                f[condition] = 0. # terminate on this condition
+            else: # markov edge: terminate on condition's targets
+                for dest, d in self.gRev[destVar].items():
+                    try:
+                        f[dest] = safe_log(d[(condition,)])
+                    except KeyError:
+                        pass
         
+
+class ForwardDict(object):
+    'forward probability dictionary conditioned on a specified state'
+    def __init__(self, parent, condition):
+        self.parent = parent
+        self.condition = condition
+        self.f = {}
+        self.parent.segmentGraph.seed_forward(condition, self.f)
+
+    def __getitem__(self, dest):
+        'get forward probability up to dest, conditioned on condition'
+        try:
+            return self.f[dest] # get from cache
+        except KeyError:
+            pass
+        if dest.var in self.parent.segmentGraph.g: # segment end
+            segment = self.parent.segmentGraph.varDict[dest.var]
+            for state in segment.varStates[segment.startVar]:
+                self[state] # force calculation of all start states
+            p_segment(dest, self.f, self.parent.logPobsDict, segment.gRev)
+        elif len(self.parent.segmentGraph.gRevVars[destVar]) == 1:
+            l = []  # simple segment start, just sum incoming edges
+            for sources, edge in self.parent.segmentGraph.gRev[dest.var] \
+                    [dest].items():
+                l.append(self[sources[0]] + safe_log(edge))
+                self.f[dest] = log_sum_list(l)
+        else: # multicond, check for loops
+            pass
+        return self.f[dest]
+
+
+class ForwardProbability(object):
+    def __init__(self, segmentGraph, logPobsDict):
+        self.segmentGraph = segmentGraph
+        self.logPobsDict = logPobsDict
+        self.cond = {}
+
+    def __getitem__(self, condition):
+        try:
+            return self.cond[condition]
+        except KeyError:
+            self.cond[condition] = d = ForwardDict(self, condition)
+            return d
+
                         
 class ObsExhaustedError(IndexError):
     pass
