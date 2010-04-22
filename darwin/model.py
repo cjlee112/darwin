@@ -329,8 +329,8 @@ class SegmentGraph(object):
         self.gRev = {} # {destVar:{dest:{(source1, source2,...):edge}}}
         self.gRevVars = {}  # {destVar:(sourceVar1, sourceVar2, ...)}
         self.multicond_set = MultiCondSet()
-        self.stops = {}
-        self.starts = {}
+        self.stops = {} # {stop:{source:edge}}
+        self.starts = {} # {start:{destVar:{dest:edge}}}
 
     def add_edge(self, source, dest, edge, multiDest):
         if isinstance(edge, MultiEdge):
@@ -401,6 +401,26 @@ class SegmentGraph(object):
                         f[dest] = safe_log(d[(condition,)])
                     except KeyError:
                         pass
+
+    def analyze_deps(self, segment=None):
+        'determine proximal dependencies for segment and its predecessors'
+        if segment is None: # initiate analysis from STOP
+            for stop, d in self.stops.items():
+                for source in d:
+                    seg = self.varDict[source.var]
+                    if not hasattr(seg, 'dep'):
+                        self.analyze_deps(seg)
+            return
+        if not hasattr(segment, 'dep'): # determine this segment's dependencies
+            dep = set()
+            for sourceVar in self.gRevVars[segment.startVar]:
+                seg = self.varDict[sourceVar]
+                dep.update(self.analyze_deps(seg))
+            segment.dep = dep
+        if len(self.g[segment.stopVar]) > 1: # multidep exit becomes new dep
+            return frozenset((segment,))
+        else: # just echo its dependencies forward
+            return segment.dep
         
 
 class ForwardDict(object):
