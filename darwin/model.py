@@ -329,7 +329,11 @@ class Segment(object):
                         s.add(branch1) # add its branches
                         s.add(branch2)
                         break
-        return results
+        self.loopStarts = results
+        loopBranches = set()
+        for s in results.values():
+            loopBranches.update(s)
+        self.loopBranches = loopBranches
 
     def generate_dependencies(self):
         "get this segment's dependencies, in order from closest to furthest"
@@ -337,6 +341,18 @@ class Segment(object):
         for dep in self.dep:
             l += dep.generate_dependencies()
         return l
+
+    def get_non_loop_branches(self, sources):
+        'generate subset of sources that are not part of a loop'
+        for source in sources:
+            if source.var not in self.loopBranches:
+                yield source
+
+    def get_loop_branches(self, sources):
+        'generate loops ending at this segment, each with its sources'
+        for loopStart, s in self.loopStarts:
+            branches = [source for source in sources if source.var in s]
+            yield loopStart, branches
 
 
 def p_segment(dest, f, logPobsDict, g):
@@ -477,8 +493,8 @@ class ForwardDict(object):
             return self.f[dest] # get from cache
         except KeyError:
             pass
+        segment = self.parent.segmentGraph.varDict[dest.var]
         if dest.var in self.parent.segmentGraph.g: # segment end
-            segment = self.parent.segmentGraph.varDict[dest.var]
             for state in segment.varStates[segment.startVar]:
                 self[state] # force calculation of all start states
             p_segment(dest, self.f, self.parent.logPobsDict, segment.gRev)
@@ -490,11 +506,12 @@ class ForwardDict(object):
             self.f[dest] = log_sum_list(l)
         else: # multicond segment start
             l = []
-            for sources, p in self.parent.segmentGraph.gRev[dest.var][dest].items():
+            for sources, p in self.parent.segmentGraph.gRev[dest.var][dest]\
+                    .items():
                 logP = safe_log(p) # process non-loop branches
-                for branch in non_loop_branches(dest, sources):
+                for branch in segment.get_non_loop_branches(sources):
                     logP += self[branch]
-                for loopStart, branches in loop_branches(dest, sources):
+                for loopStart, branches in segment.get_loop_branches(sources):
                     logP += self[loopStart] # calculate forward up to loopStart
                     loopCalc = self.parent[loopStart] # condition on loopStart
                     for branch in branches:
