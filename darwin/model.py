@@ -498,7 +498,7 @@ class ForwardDict(object):
             for state in segment.varStates[segment.startVar]:
                 self[state] # force calculation of all start states
             p_segment(dest, self.f, self.parent.logPobsDict, segment.gRev)
-        elif len(self.parent.segmentGraph.gRevVars[destVar]) == 1:
+        elif len(self.parent.segmentGraph.gRevVars[dest.var]) == 1:
             l = []  # simple segment start, just sum incoming edges
             for sources, edge in self.parent.segmentGraph.gRev[dest.var] \
                     [dest].items():
