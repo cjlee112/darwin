@@ -297,6 +297,7 @@ class Segment(object):
         self.varStates = {} # {var:set(state)}
         self.startVar = startVar
         self.segmentGraph = segmentGraph
+        segmentGraph.segments.append(self) # add to list of all segments
 
     def add_edge(self, source, dest, edge):
         'add an internal edge within this segment'
@@ -382,6 +383,7 @@ class SegmentGraph(object):
         self.multicond_set = MultiCondSet()
         self.stops = {} # {stop:{source:edge}}
         self.start = None
+        self.segments = []
 
     def add_edge(self, source, dest, edge, multiDest):
         '''Save an edge from source node to dest node, either by saving to
@@ -425,7 +427,8 @@ class SegmentGraph(object):
         elif self.start is not None:
             raise ValueError('START already assigned!!')
         self.start = node
-        self.varDict[node.var] = Segment(node.var, self)
+        self.varDict[node.var] = seg = Segment(node.var, self)
+        seg.dep = frozenset() # START has no dependencies
 
     def mark_end(self, node):
         'mark node as STOP'
@@ -449,6 +452,12 @@ class SegmentGraph(object):
                 l.append(b[dest] + safe_log(edge) + logPobsDict[dest])
             logP += log_sum_list(l)
         return logP
+
+    def p_forward(self, logPobsDict):
+        for segment in self.segments: # analyze segment loop structure
+            segment.find_loop_starts()
+        fprob = ForwardProbability(self, logPobsDict) # probability graph
+        return fprob[self.start][self.stop] # total prob from start to stop
 
     def seed_forward(self, condition, f):
         'add terminations for forward calc based on condition'
@@ -498,7 +507,7 @@ class ForwardDict(object):
         except KeyError:
             pass
         segment = self.parent.segmentGraph.varDict[dest.var]
-        if dest.var in self.parent.segmentGraph.g: # segment end
+        if dest.var not in self.parent.segmentGraph.gRev: # segment end
             for state in segment.varStates[segment.startVar]:
                 self[state] # force calculation of all start states
             p_segment(dest, self.f, self.parent.logPobsDict, segment.gRev)
