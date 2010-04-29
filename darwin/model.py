@@ -291,20 +291,52 @@ class Segment(object):
     '''Unbranched segment of one or more Variables linked by compiled
     state graphs representing their allowed state --> state transitions.'''
 
-    def __init__(self, startVar):
+    def __init__(self, startVar, segmentGraph):
         self.g = {} # {source:{dest:edge}}
         self.gRev = {} # {dest:{source:edge}}
-        self.varStates = {} # {var:{state:0}}
+        self.varStates = {} # {var:set(state)}
         self.startVar = startVar
+        self.segmentGraph = segmentGraph
 
     def add_edge(self, source, dest, edge):
+        'add an internal edge within this segment'
         self.g.setdefault(source, {})[dest] = edge
         self.gRev.setdefault(dest, {})[source] = edge
-        self.varStates.setdefault(source.var, {})[source] = 0
-        self.varStates.setdefault(dest.var, {})[dest] = 0
+        self.varStates.setdefault(source.var, set()).add(source)
+        self.varStates.setdefault(dest.var, set()).add(dest)
 
     def mark_end(self, node):
+        'designate the terminal variable of this segment'
         self.stopVar = node.var
+
+    def get_predecessors(self):
+        'generate all segments that this segment depends on'
+        for var in self.segmentGraph.gRevVars[self.startVar]:
+            yield self.segmentGraph.varDict[var]
+
+    def find_loop_starts(self):
+        'scan predecessors of this segment to identify loops and their start points'
+        l = list(self.get_predecessors())
+        results = {}
+        for i, branch1 in enumerate(l):
+            deps1 = branch1.generate_dependencies()
+            for j in range(i):
+                branch2 = l[j]
+                deps2 = branch2.generate_dependencies()
+                for start1 in deps1:
+                    if start1 in deps2: # found loop start
+                        s = results.setdefault(start1, set()) # save loop start
+                        s.add(branch1) # add its branches
+                        s.add(branch2)
+                        break
+        return results
+
+    def generate_dependencies(self):
+        "get this segment's dependencies, in order from closest to furthest"
+        l = list(self.dep)
+        for dep in self.dep:
+            l += dep.generate_dependencies()
+        return l
 
 
 def p_segment(dest, f, logPobsDict, g):
@@ -323,6 +355,9 @@ def p_segment(dest, f, logPobsDict, g):
         
 
 class SegmentGraph(object):
+    '''reduced representation as a graph whose nodes are unbranched segments,
+    with edges connecting them.  Each segment graph edge is either
+    multiple-dependents (1:many) or multiple-conditions (many:1).'''
     def __init__(self):
         self.g = {} # {sourceVar:[destVar1, destVar2], ...}
         self.varDict = {} # {var:segment}
@@ -333,6 +368,9 @@ class SegmentGraph(object):
         self.starts = {} # {start:{destVar:{dest:edge}}}
 
     def add_edge(self, source, dest, edge, multiDest):
+        '''Save an edge from source node to dest node, either by saving to
+        the appropriate segment, or as a segment-to-segment edge.  Multi-condition
+        edges are indicated by a special class, MultiEdge.'''
         if isinstance(edge, MultiEdge):
             return self.add_multi_condition(dest, edge)
         elif source in self.starts: # START edge
@@ -345,7 +383,7 @@ class SegmentGraph(object):
             return
         if dest.var not in self.varDict:
             if multiDest: # link new segment into segment graph
-                self.varDict[dest.var] = Segment(dest.var)
+                self.varDict[dest.var] = Segment(dest.var, self)
                 self.g.setdefault(source.var, []).append(dest.var)
                 self.gRevVars[dest.var] = (source.var,)
                 self.varDict[source.var].mark_end(source)
@@ -366,12 +404,15 @@ class SegmentGraph(object):
         self.gRev[dest.var].setdefault(dest, {})[edge.vec] = edge.edge
 
     def mark_start(self, node):
+        'mark node as START'
         self.starts[node] = {}
 
     def mark_end(self, node):
+        'mark node as STOP'
         self.stops[node] = {}
 
     def p_backward(self, logPobsDict):
+        'simple backwards probability calculation'
         if len(self.starts) > 1:
             raise ValueError('multiple starts?!')
         start, targets = self.starts.items()[0]
@@ -413,8 +454,7 @@ class SegmentGraph(object):
             return
         if not hasattr(segment, 'dep'): # determine this segment's dependencies
             dep = set()
-            for sourceVar in self.gRevVars[segment.startVar]:
-                seg = self.varDict[sourceVar]
+            for seg in segment.get_predecessors():
                 dep.update(self.analyze_deps(seg))
             segment.dep = dep
         if len(self.g[segment.stopVar]) > 1: # multidep exit becomes new dep
