@@ -381,19 +381,18 @@ class SegmentGraph(object):
         self.gRevVars = {}  # {destVar:(sourceVar1, sourceVar2, ...)}
         self.multicond_set = MultiCondSet()
         self.stops = {} # {stop:{source:edge}}
-        self.starts = {} # {start:{destVar:{dest:edge}}}
+        self.start = None
 
     def add_edge(self, source, dest, edge, multiDest):
         '''Save an edge from source node to dest node, either by saving to
         the appropriate segment, or as a segment-to-segment edge.  Multi-condition
-        edges are indicated by a special class, MultiEdge.'''
+        edges are indicated by a special class, MultiEdge.
+        Assumes source.var segment already in self.varDict, but creates
+        new segment for dest.var if not already in self.varDict.'''
         if isinstance(edge, MultiEdge):
             return self.add_multi_condition(dest, edge)
-        elif source in self.starts: # START edge
-            self.starts[source].setdefault(dest.var, {})[dest] = edge
-            if dest.var not in self.varDict:
-                self.varDict[dest.var] = Segment(dest.var)
-            return
+        elif source == self.start: # START edge
+            multiDest = True # always keep START as a separate segment!
         elif dest in self.stops: # STOP edge        
             self.stops[dest][source] = edge
             return
@@ -421,7 +420,12 @@ class SegmentGraph(object):
 
     def mark_start(self, node):
         'mark node as START'
-        self.starts[node] = {}
+        if node == self.start:
+            return # already added, nothing further to do
+        elif self.start is not None:
+            raise ValueError('START already assigned!!')
+        self.start = node
+        self.varDict[node.var] = Segment(node.var, self)
 
     def mark_end(self, node):
         'mark node as STOP'
