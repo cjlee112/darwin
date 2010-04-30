@@ -29,5 +29,6 @@ def odc_test(p6=.5, n=100):
               (nodeF, m.posterior(nodeF),
                nodeL, m.posterior(nodeL),
                s[i], obs[i][0], exp(llDict[obsLabel][0]))
-    print 'logP', m.logPobs, m.segmentGraph.p_backward(m.logPobsDict)
+    print 'logP', m.logPobs, m.segmentGraph.p_backward(m.logPobsDict), \
+          m.segmentGraph.p_forward(m.logPobsDict)
     return m

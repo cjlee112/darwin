@@ -312,7 +312,11 @@ class Segment(object):
 
     def get_predecessors(self):
         'generate all segments that this segment depends on'
-        for var in self.segmentGraph.gRevVars[self.startVar]:
+        try:
+            predecessors = self.segmentGraph.gRevVars[self.startVar]
+        except KeyError:
+            return # no predecessors
+        for var in predecessors:
             yield self.segmentGraph.varDict[var]
 
     def count_branches(self):
@@ -409,6 +413,7 @@ class SegmentGraph(object):
             if multiDest: # link new segment into segment graph
                 self.varDict[dest.var] = Segment(dest.var, self)
                 self.g.setdefault(source.var, []).append(dest.var)
+                self.gRev[dest.var] = {}
                 self.gRevVars[dest.var] = (source.var,)
                 self.varDict[source.var].mark_end(source)
             else: # continue existing segment
@@ -424,7 +429,9 @@ class SegmentGraph(object):
             for source in edge.vec:
                 self.g.setdefault(source.var, []).append(dest.var)
                 self.varDict[source.var].mark_end(source)
-            self.gRevVars[dest.var] = [source.var for source in edge.vec]
+            self.gRev[dest.var] = {}
+            self.gRevVars[dest.var] = tuple([source.var for source in
+                                             edge.vec])
         self.gRev[dest.var].setdefault(dest, {})[edge.vec] = edge.edge
 
     def mark_start(self, node):
@@ -460,18 +467,16 @@ class SegmentGraph(object):
     
     def p_backward(self, logPobsDict):
         'simple backwards probability calculation'
-        if len(self.starts) > 1:
-            raise ValueError('multiple starts?!')
-        start, targets = self.starts.items()[0]
         logP = 0.
         b = {}
         for stop, d in self.stops.items():
             for node, edge in d.items():
                 b[node] = safe_log(edge) # mark states with edges to STOP
-        for var, states in targets.items(): # product over multiple variables
+        for var in self.g[self.start.var]: # product over multiple variables
             l = []
             g = self.varDict[var].g
-            for dest, edge in states.items(): # sum over multiple states
+            for dest, d in self.gRev[var].items(): # sum over all states
+                edge = d[(self.start,)] 
                 p_segment(dest, b, logPobsDict, g) # calculate b[dest]
                 l.append(b[dest] + safe_log(edge) + logPobsDict[dest])
             logP += log_sum_list(l)
@@ -481,7 +486,6 @@ class SegmentGraph(object):
         'loop-aware forward probability calculation'
         stopSegment, stop, edges = self.get_stop_segment()
         self.analyze_deps(stopSegment)
-        stopSegment.find_loop_starts()
         for segment in self.segments: # analyze segment loop structure
             segment.find_loop_starts()
         fprob = ForwardProbability(self, logPobsDict) # probability graph
@@ -491,18 +495,21 @@ class SegmentGraph(object):
             if self.varDict[sourceVar] not in stopSegment.loopBranches:
                 l = []
                 for source, p in states.items():
-                    l.append(fstart[source] + safe_log(p))
+                    l.append(fstart[source] + logPobsDict[source] +
+                             safe_log(p))
                 logP += log_sum_list(l)
         for loopStart, branches in stopSegment.loopStarts.items():
             lsStates = loopStart.varStates[loopStart.stopVar]
             l = []
             for lsState in lsStates: # sum over all loopStart states
-                logP2 = fstart[lsState] # calculate forward up to loopStart
+                # calculate forward up to loopStart
+                logP2 = fstart[lsState] + logPobsDict[lsState]
                 loopCalc = fprob[lsState] # condition on loopStart
                 for branch in branches:
                     l2 = []
                     for source, p in edges[branch.stopVar].items():
-                        l2.append(loopCalc[source] + safe_log(p))
+                        l2.append(loopCalc[source] + logPobsDict[source] +
+                                  safe_log(p))
                     logP2 += log_sum_list(l2)
                 l.append(logP2)
             logP += log_sum_list(l) # product of different loops
@@ -557,7 +564,9 @@ class ForwardDict(object):
             l = []  # simple segment start, just sum incoming edges
             for sources, edge in self.parent.segmentGraph.gRev[dest.var] \
                     [dest].items():
-                l.append(self[sources[0]] + safe_log(edge))
+                l.append(self[sources[0]] +
+                         self.parent.logPobsDict[sources[0]] +
+                         safe_log(edge))
             self.f[dest] = log_sum_list(l)
         else: # multicond segment start
             l = []
@@ -570,10 +579,13 @@ class ForwardDict(object):
                     lsStates = loopStart.varStates[loopStart.stopVar]
                     l2 = []
                     for lsState in lsStates: # sum over all loopStart states
-                        logP2 = self[lsState] # calculate forward up to loopStart
+                        # calculate forward up to loopStart
+                        logP2 = self[lsState] + \
+                                self.parent.logPobsDict[lsState]
                         loopCalc = self.parent[lsState] # condition on loopStart
                         for branch in branches:
-                            logP2 += loopCalc[branch]
+                            logP2 += loopCalc[branch] + \
+                                self.parent.logPobsDict[branch]
                         l2.append(logP2)
                     logP += log_sum_list(l2)
                 l.append(logP)
