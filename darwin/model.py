@@ -315,6 +315,12 @@ class Segment(object):
         for var in self.segmentGraph.gRevVars[self.startVar]:
             yield self.segmentGraph.varDict[var]
 
+    def count_branches(self):
+        try:
+            return len(self.segmentGraph.g[self.stopVar])
+        except (KeyError, AttributeError):
+            return 0
+
     def find_loop_starts(self):
         'scan predecessors of this segment to identify loops and their start points'
         l = list(self.get_predecessors())
@@ -346,13 +352,14 @@ class Segment(object):
     def get_non_loop_branches(self, sources):
         'generate subset of sources that are not part of a loop'
         for source in sources:
-            if source.var not in self.loopBranches:
+            if self.segmentGraph.varDict[source.var] not in self.loopBranches:
                 yield source
 
     def get_loop_branches(self, sources):
         'generate loops ending at this segment, each with its sources'
         for loopStart, s in self.loopStarts:
-            branches = [source for source in sources if source.var in s]
+            branches = [source for source in sources \
+                        if self.segmentGraph.varDict[source.var] in s]
             yield loopStart, branches
 
 
@@ -429,11 +436,28 @@ class SegmentGraph(object):
         self.start = node
         self.varDict[node.var] = seg = Segment(node.var, self)
         seg.dep = frozenset() # START has no dependencies
+        seg.varStates[node.var] = frozenset((node,))
 
     def mark_end(self, node):
         'mark node as STOP'
         self.stops[node] = {}
 
+    def get_stop_segment(self):
+        'create a segment representing the STOP state'
+        stop = self.stops.keys()[0] # use this as our canonical stop state
+        stopSegment = Segment(stop.var, self)
+        self.varDict[stop.var] = stopSegment
+        endVars = set() # find all vars with edge to STOP
+        edges = {}
+        for dest, sources in self.stops.items():
+            for source, p in sources.items():
+                edges.setdefault(source.var, {})[source] = p
+                endVars.add(source.var)
+        self.gRevVars[stop.var] = tuple(endVars)
+        for sourceVar in endVars:
+            self.g.setdefault(sourceVar, []).append(stop.var)
+        return stopSegment, stop, edges
+    
     def p_backward(self, logPobsDict):
         'simple backwards probability calculation'
         if len(self.starts) > 1:
@@ -454,10 +478,35 @@ class SegmentGraph(object):
         return logP
 
     def p_forward(self, logPobsDict):
+        'loop-aware forward probability calculation'
+        stopSegment, stop, edges = self.get_stop_segment()
+        self.analyze_deps(stopSegment)
+        stopSegment.find_loop_starts()
         for segment in self.segments: # analyze segment loop structure
             segment.find_loop_starts()
         fprob = ForwardProbability(self, logPobsDict) # probability graph
-        return fprob[self.start][self.stop] # total prob from start to stop
+        fstart = fprob[self.start] # condition on START state
+        logP = 0.
+        for sourceVar, states in edges.items(): # non loop branches
+            if self.varDict[sourceVar] not in stopSegment.loopBranches:
+                l = []
+                for source, p in states.items():
+                    l.append(fstart[source] + safe_log(p))
+                logP += log_sum_list(l)
+        for loopStart, branches in stopSegment.loopStarts.items():
+            lsStates = loopStart.varStates[loopStart.stopVar]
+            l = []
+            for lsState in lsStates: # sum over all loopStart states
+                logP2 = fstart[lsState] # calculate forward up to loopStart
+                loopCalc = fprob[lsState] # condition on loopStart
+                for branch in branches:
+                    l2 = []
+                    for source, p in edges[branch.stopVar].items():
+                        l2.append(loopCalc[source] + safe_log(p))
+                    logP2 += log_sum_list(l2)
+                l.append(logP2)
+            logP += log_sum_list(l) # product of different loops
+        return logP
 
     def seed_forward(self, condition, f):
         'add terminations for forward calc based on condition'
@@ -474,19 +523,12 @@ class SegmentGraph(object):
 
     def analyze_deps(self, segment=None):
         'determine proximal dependencies for segment and its predecessors'
-        if segment is None: # initiate analysis from STOP
-            for stop, d in self.stops.items():
-                for source in d:
-                    seg = self.varDict[source.var]
-                    if not hasattr(seg, 'dep'):
-                        self.analyze_deps(seg)
-            return
         if not hasattr(segment, 'dep'): # determine this segment's dependencies
             dep = set()
             for seg in segment.get_predecessors():
                 dep.update(self.analyze_deps(seg))
             segment.dep = dep
-        if len(self.g[segment.stopVar]) > 1: # multidep exit becomes new dep
+        if segment.count_branches() > 1: # multidep exit becomes new dep
             return frozenset((segment,))
         else: # just echo its dependencies forward
             return segment.dep
@@ -525,10 +567,15 @@ class ForwardDict(object):
                 for branch in segment.get_non_loop_branches(sources):
                     logP += self[branch]
                 for loopStart, branches in segment.get_loop_branches(sources):
-                    logP += self[loopStart] # calculate forward up to loopStart
-                    loopCalc = self.parent[loopStart] # condition on loopStart
-                    for branch in branches:
-                        logP += loopCalc[branch]
+                    lsStates = loopStart.varStates[loopStart.stopVar]
+                    l2 = []
+                    for lsState in lsStates: # sum over all loopStart states
+                        logP2 = self[lsState] # calculate forward up to loopStart
+                        loopCalc = self.parent[lsState] # condition on loopStart
+                        for branch in branches:
+                            logP2 += loopCalc[branch]
+                        l2.append(logP2)
+                    logP += log_sum_list(l2)
                 l.append(logP)
             self.f[dest] = log_sum_list(l)
         return self.f[dest]
