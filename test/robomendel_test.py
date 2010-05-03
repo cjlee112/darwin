@@ -9,7 +9,7 @@ import numpy
 def get_mix_model(modelWh, modelPu):
     return mixture.Mixture(((0.9, modelPu), (0.1, modelWh)))
 
-def pheno1_test(modelWh, modelPu):
+def pheno1_setup(modelWh, modelPu):
     pstate = model.LinearState('Pu', modelPu)
     wstate = model.LinearState('Wh', modelWh)
     prior = model.StateGraph({'START':{pstate:0.9, wstate:0.1}})
@@ -25,7 +25,12 @@ def pheno1_test(modelWh, modelPu):
         obsSet.add_obs(modelPu.rvs(100), plantID=plant)
 
     m = model.Model(dg, obsSet)
+    return m, obsSet
+
+def pheno1_test(modelWh, modelPu):
+    m, obsSet = pheno1_setup(modelWh, modelPu)
     logPobs = m.calc_fb()
+    print 'logPobs:', logPobs, m.segmentGraph.p_forward(m.logPobsDict)
     llDict = m.posterior_ll()
 
     mixModel = get_mix_model(modelWh, modelPu)

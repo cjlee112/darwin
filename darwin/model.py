@@ -408,6 +408,7 @@ class SegmentGraph(object):
             multiDest = True # always keep START as a separate segment!
         elif dest in self.stops: # STOP edge        
             self.stops[dest][source] = edge
+            self.varDict[source.var].mark_end(source)
             return
         if dest.var not in self.varDict:
             if multiDest: # link new segment into segment graph
@@ -518,10 +519,10 @@ class SegmentGraph(object):
     def seed_forward(self, condition, f):
         'add terminations for forward calc based on condition'
         source = condition.var
+        f[condition] = 0. # terminate on this condition
         for destVar in self.g[source]:
-            if len(self.gRevVars[destVar]) > 1: # multicond edge
-                f[condition] = 0. # terminate on this condition
-            else: # markov edge: terminate on condition's targets
+            if len(self.gRevVars[destVar]) == 1:
+                # markov edge: terminate on condition's targets
                 for dest, d in self.gRev[destVar].items():
                     try:
                         f[dest] = safe_log(d[(condition,)])
@@ -556,7 +557,7 @@ class ForwardDict(object):
         except KeyError:
             pass
         segment = self.parent.segmentGraph.varDict[dest.var]
-        if dest.var not in self.parent.segmentGraph.gRev: # segment end
+        if dest.var != segment.startVar: # segment end, must recurse to start
             for state in segment.varStates[segment.startVar]:
                 self[state] # force calculation of all start states
             p_segment(dest, self.f, self.parent.logPobsDict, segment.gRev)
