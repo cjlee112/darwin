@@ -53,7 +53,7 @@ Definitions
 Interfaces
 ----------
 
-.. class:: DependencyGraph(graph)
+.. class:: DependencyGraph(graph, multiCondSet=None)
 
    Represents the dependency structure of a graphical model consisting of
    one or more variables linked by edges representing dependency relations.
@@ -67,6 +67,16 @@ Interfaces
    :class:`Variable` object.
 
    Each edge must be a :class:`StateGraph` object or equivalent interface.
+
+   If a source node object is a tuple, it will be treated as a set of
+   multiple conditions.  The values in the tuple can either be text
+   labels (strings) or :class:`Variable` objects.  They specify the
+   list of variables that the destination variable depends on.
+   Each *edge* must therefore be a state graph object that takes a tuple
+   of multiple variable-states as a key (instead of a single state object,
+   as is the standard case for a Markov edge).  The *source* tuple is
+   converted automatically into a :class:`MultiCondition` object
+   and registered on the *multiCondSet* object.
 
    If a destination node object is *callable*, it will be treated as a
    generator of multiple destination nodes.  Specifically, it will be called
@@ -108,7 +118,7 @@ Interfaces
    add a list of observations *values* with kwargs key=value *tags*.
 
 
-.. class:: Model(dependencyGraph, obsLabel, logPmin=neginf)
+.. class:: Model(dependencyGraph, obsLabel, logPmin=neginf, multiCondSet=None)
 
    Top-level interface for computing the posterior likelihood
    of a set of observations on a dependency graph.
@@ -116,6 +126,15 @@ Interfaces
    Any state with observation likelihood less than or equal to *logPmin*
    will truncate a path.  Its default value simply truncates
    zero-probability paths.
+
+   If your *dependencyGraph* contains multiple-condition edges,
+   you must supply the corresponding *multiCondSet* object that 
+   stores them.
+
+   Creating a :class:`Model` instance compiles the complete
+   state graph implied by the :class*`DependencyGraph` (which may
+   invoke subgraph compilation), as applied to the specific
+   set of observations provided by *obsLabel*.
 
 .. method:: Model.calc_fb()
 

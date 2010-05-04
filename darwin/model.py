@@ -386,12 +386,14 @@ class SegmentGraph(object):
     '''reduced representation as a graph whose nodes are unbranched segments,
     with edges connecting them.  Each segment graph edge is either
     multiple-dependents (1:many) or multiple-conditions (many:1).'''
-    def __init__(self):
+    def __init__(self, multiCondSet=None):
         self.g = {} # {sourceVar:[destVar1, destVar2], ...}
         self.varDict = {} # {var:segment}
         self.gRev = {} # {destVar:{dest:{(source1, source2,...):edge}}}
         self.gRevVars = {}  # {destVar:(sourceVar1, sourceVar2, ...)}
-        self.multicond_set = MultiCondSet()
+        if multiCondSet is None:
+            multiCondSet = MultiCondSet()
+        self.multiCondSet = multiCondSet
         self.stops = {} # {stop:{source:edge}}
         self.start = None
         self.segments = []
@@ -782,7 +784,8 @@ class ObsSequenceSimulator(ObsSequenceLabel):
 
 
 class Model(object):
-    def __init__(self, dependencyGraph, obsLabel, logPmin=neginf):
+    def __init__(self, dependencyGraph, obsLabel, logPmin=neginf,
+                 multiCondSet=None):
         '''graph represents the dependency structure; it must
         be a dictionary whose keys are dependency group IDs, and
         associated values are lists of state graphs that nodes in
@@ -795,7 +798,7 @@ class Model(object):
         self.compiledGraphRev = {}
         self.logPobsDict = {self.start:self.start.log_p_obs()}
         self.b = {}
-        self.segmentGraph = SegmentGraph()
+        self.segmentGraph = SegmentGraph(multiCondSet)
         self.segmentGraph.mark_start(self.start)
         compile_graph(self.compiledGraph, self.compiledGraphRev,
                       self.start, self.b, self.logPobsDict, logPmin, None,
@@ -1041,7 +1044,7 @@ def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent, segmentGraph):
         fromNodes = (node,) # generate edges from this node
     for fromNode in fromNodes:
         try:  # multicondition edges
-            variables = segmentGraph.multicond_set(fromNode, parent)
+            variables = segmentGraph.multiCondSet(fromNode, parent)
         except KeyError:
             variables = []
         targets = []
