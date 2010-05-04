@@ -13,6 +13,8 @@ Contents:
    :glob:
 
    tutorials/*
+   reference/*
+
 
 Indices and tables
 ==================
