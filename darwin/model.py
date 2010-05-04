@@ -151,8 +151,8 @@ class MultiCondition(object):
         self.states[node.var].append(node)
         l = []
         for vec in self.generate_vectors(node):
-            for dest, edge in self.mc.stateGraph(vec, self.targetVar,
-                                                 parent=self.parent).items():
+            for dest, edge in self.stateGraph(vec, self.targetVar,
+                                              parent=parent).items():
                 l.append(MultiEdge(vec, dest, edge))
         return MultiEdgeSet(l)
 
