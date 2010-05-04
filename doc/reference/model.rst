@@ -132,7 +132,7 @@ Interfaces
    stores them.
 
    Creating a :class:`Model` instance compiles the complete
-   state graph implied by the :class*`DependencyGraph` (which may
+   state graph implied by the :class:`DependencyGraph` (which may
    invoke subgraph compilation), as applied to the specific
    set of observations provided by *obsLabel*.
 
