@@ -161,7 +161,7 @@ class MultiCondition(object):
         if self.nBind < len(self.conditions):
             return {} # incomplete bindings, so do nothing now...
         l = []
-        for vec in self.gen_vec2(node):
+        for vec in self.gen_vec2(self.sourceVars.index(node.var)):
             for dest, edge in self.stateGraph(vec, self.targetVar,
                                               parent=parent).items():
                 l.append(MultiEdge(vec, dest, edge))
@@ -400,7 +400,7 @@ class Segment(object):
 
     def get_loop_branches(self, sources):
         'generate loops ending at this segment, each with its sources'
-        for loopStart, s in self.loopStarts:
+        for loopStart, s in self.loopStarts.items():
             branches = [source for source in sources \
                         if self.segmentGraph.varDict[source.var] in s]
             yield loopStart, branches
@@ -464,7 +464,7 @@ class SegmentGraph(object):
 
     def add_multi_condition(self, dest, edge):
         if dest.var not in self.varDict:
-            self.varDict[dest.var] = Segment(dest.var)
+            self.varDict[dest.var] = Segment(dest.var, self)
             for source in edge.vec:
                 self.g.setdefault(source.var, []).append(dest.var)
                 self.varDict[source.var].mark_end(source)
@@ -746,7 +746,7 @@ class ObsSubset(object):
         'select subset that matches (additional) tag key=value constraints'
         newtags = self.tags.copy()
         newtags.update(tags) # allow new tags to overwrite old tags
-        return self.__class__(self.obsSet, newtags)
+        return self.__class__(self.obsSet, **newtags)
 
     def get_next(self, **kwargs): # dummy method for LinearState compatibility
         return self
