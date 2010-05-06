@@ -55,7 +55,8 @@ class Node(object):
         results = []
         if fromNode is None:
             fromNode = self
-        for varLabel, stateGraph in self.var.graph[self].items():
+        variables = self.var.graph[self]
+        for varLabel, stateGraph in variables.items():
             results.append(stateGraph(fromNode, varLabel, state=self.state, parent=parent))
         return results
 
@@ -142,19 +143,47 @@ class MultiCondition(object):
         self.conditions = conditions
         self.targetVar = targetVar
         self.stateGraph = stateGraph
-        d = {}
-        for var in conditions:
-            d[var] = []
-        self.states = d
+        self.states = {}
+        self.sourceVars = [None] * len(conditions)
+        self.nBind = 0
 
-    def __call__(self, node, parent):
+    def bind_var(self, var):
+        'bind this variable to this MultiCondition'
+        self.states[var] = []
+        i = self.conditions.index(var.label)
+        self.sourceVars[i] = var
+        self.nBind += 1 # count total number of bound variables
+
+    def __call__(self, node, targetVar, state=None, parent=None):
+        'generate all possible multicond edge vectors for node in cumm. order'
         self.states[node.var].append(node)
+        print 'Multicondition(%s)' % repr(node)
+        if self.nBind < len(self.conditions):
+            return {} # incomplete bindings, so do nothing now...
         l = []
-        for vec in self.generate_vectors(node):
+        for vec in self.gen_vec2(node):
             for dest, edge in self.stateGraph(vec, self.targetVar,
                                               parent=parent).items():
                 l.append(MultiEdge(vec, dest, edge))
+                print '\t', vec, dest, edge
         return MultiEdgeSet(l)
+
+    def gen_vec2(self, iConst, i=0):
+        'recursive generator of all possible state combinations'
+        try:
+            var = self.sourceVars[i]
+        except IndexError:
+            yield () # truncate the recursion
+            return
+        if i == iConst: # restricted to last state of this variable
+            constState = (self.states[var][-1],)
+            for substates in self.gen_vec2(iConst, i + 1):
+                yield constState + substates
+        else: # iterate over all possible states of this variable
+            for state in self.states[var]:
+                for substates in self.gen_vec2(iConst, i + 1):
+                    yield (state,) + substates
+            
 
     def generate_vectors(self, newState):
         q = []
@@ -182,21 +211,6 @@ class MultiCondition(object):
         return vectors
 
 
-class MultiCondSet(object):
-    def __init__(self):
-        self.vars = {}
-
-    def add_multi_cond(self, sourceVar, multiCond):
-        self.vars.setdefault(sourceVar, []).append(multiCond)
-
-    def __call__(self, fromNode, parent):
-        l = self.vars[fromNode.var] # raise KeyError if not found
-        results = []
-        for multiCond in l:
-            results.append(multiCond(fromNode, parent))
-        return results
-            
-
 class MultiEdge(object):
     def __init__(self, vec, dest, edge):
         self.vec = vec
@@ -216,24 +230,21 @@ class MultiEdgeSet(object):
 class DependencyGraph(object):
     labelClass = Variable
 
-    def __init__(self, graph, multiCondSet=None):
+    def __init__(self, graph):
         '''graph should be dict of {sourceLabel:{destLabel:stateGraph}}
         edges.  destLabel can be a Variable object (allowing you to
         specify a cross-connection to a node in another graph),
         or simply any Python value, in which case it will be treated
         as label for creating a Variable.'''
-        d = {}
+        multiCond = {}
         for k, targets in graph.items():
             if isinstance(k, tuple): # multiple conditions
-                sourceVars = [self.get_var(label) for label in k]
-                for destLabel, stateGraph in targets.items():
-                    destVar = self.get_var(destLabel)
-                    multiCond = MultiCondition(sourceVars, destVar, stateGraph)
-                    for sourceVar in sourceVars: # save for generating edges
-                        multiCondSet.add_multi_cond(sourceVar, multiCond)
-            else: # single condition
-                d.setdefault(k, {}).update(targets)                    
-        self.graph = d
+                for sourceLabel in k:
+                    multiCond[sourceLabel] = (k, targets)
+        self.graph = graph
+        self.multiCond = multiCond
+        self.multiCondVar = {}
+        self.multiCondBind = {}
 
     def __getitem__(self, node):
         'get dict of {targetVariable:stateGraph} pairs'
@@ -242,14 +253,42 @@ class DependencyGraph(object):
                 raise KeyError
             d = self.graph[node.var.label]
         except (KeyError, AttributeError):
-            raise KeyError('variable not in this graph')
+            d = {} # empty set -- no Markov edges
         results = {}
-        for label,edge in d.items():
+        for label,edge in d.items(): # process Markov edges
             if callable(label): # treat as function for generating target dict
-                for label, edge in label(node, **edge).items():
-                    results[self.get_var(label)] = edge
+                for newlabel, edge in label(node, **edge).items():
+                    results[self.get_var(newlabel)] = edge
             else:
                 results[self.get_var(label)] = edge
+
+        try: # this variable already part of an existing multicond?
+            results.update(self.multiCondVar[node.var])
+        except KeyError:
+            try: # need to bind this variable to existing multicond?
+                for multiCond in self.multiCondBind[node.var.label]:
+                    self.multiCondVar.setdefault(node.var, {}) \
+                           [multiCond.targetVar] = multiCond
+                    multiCond.bind_var(node.var)
+                del self.multiCondBind[node.var.label]
+            except KeyError:
+                try:
+                    sourceLabels, targets = self.multiCond[node.var.label]
+                except KeyError: # node.var has no multicond children
+                    return results # so nothing further to do
+                else: # create a new multicond relation
+                    for destLabel, sg in targets.items():
+                        destVar = self.get_var(destLabel)
+                        multiCond = MultiCondition(sourceLabels,
+                                                   destVar, sg)
+                        multiCond.bind_var(node.var)
+                        self.multiCondVar.setdefault(node.var, {}) \
+                               [destVar] = multiCond
+                        for label in sourceLabels: # link to labels
+                            if label != node.var.label:
+                                self.multiCondBind.setdefault(label, []) \
+                                         .append(multiCond)
+            results.update(self.multiCondVar[node.var])
         return results
 
     def get_start(self, **kwargs):
@@ -386,14 +425,11 @@ class SegmentGraph(object):
     '''reduced representation as a graph whose nodes are unbranched segments,
     with edges connecting them.  Each segment graph edge is either
     multiple-dependents (1:many) or multiple-conditions (many:1).'''
-    def __init__(self, multiCondSet=None):
+    def __init__(self):
         self.g = {} # {sourceVar:[destVar1, destVar2], ...}
         self.varDict = {} # {var:segment}
         self.gRev = {} # {destVar:{dest:{(source1, source2,...):edge}}}
         self.gRevVars = {}  # {destVar:(sourceVar1, sourceVar2, ...)}
-        if multiCondSet is None:
-            multiCondSet = MultiCondSet()
-        self.multiCondSet = multiCondSet
         self.stops = {} # {stop:{source:edge}}
         self.start = None
         self.segments = []
@@ -691,10 +727,10 @@ class ObsSet(object):
 class ObsSubset(object):
     def __init__(self, obsSet, **tags):
         self.obsSet = obsSet
-        self.tags = tuple(tags.items())
+        self.tags = tags
 
     def get_obs(self):
-        for k,v in self.tags:
+        for k,v in self.tags.items():
             try:
                 subset = subset.intersection(self.obsSet._tags[k][v])
             except NameError:
@@ -708,7 +744,9 @@ class ObsSubset(object):
 
     def get_subset(self, **tags):
         'select subset that matches (additional) tag key=value constraints'
-        return self.__class__(self.obsSet, self.tags + tags.items())
+        newtags = self.tags.copy()
+        newtags.update(tags) # allow new tags to overwrite old tags
+        return self.__class__(self.obsSet, newtags)
 
     def get_next(self, **kwargs): # dummy method for LinearState compatibility
         return self
@@ -721,7 +759,9 @@ class ObsSubset(object):
         return d
 
     def __hash__(self):
-        return hash((self.obsSet, self.tags))
+        tags = self.tags.items()
+        tags.sort() # guarantee consistent order for comparison
+        return hash((self.obsSet, tuple(tags)))
 
     def __cmp__(self, other):
         try:
@@ -732,7 +772,7 @@ class ObsSubset(object):
 
     def __repr__(self):
         return 'ObsSet(%s, %s)' % (self.obsSet.name,
-                  ', '.join([('%s=%s' % t) for t in self.tags]))
+                  ', '.join([('%s=%s' % t) for t in self.tags.items()]))
 
 
 class BranchGenerator(object):
@@ -784,8 +824,7 @@ class ObsSequenceSimulator(ObsSequenceLabel):
 
 
 class Model(object):
-    def __init__(self, dependencyGraph, obsLabel, logPmin=neginf,
-                 multiCondSet=None):
+    def __init__(self, dependencyGraph, obsLabel, logPmin=neginf):
         '''graph represents the dependency structure; it must
         be a dictionary whose keys are dependency group IDs, and
         associated values are lists of state graphs that nodes in
@@ -798,7 +837,7 @@ class Model(object):
         self.compiledGraphRev = {}
         self.logPobsDict = {self.start:self.start.log_p_obs()}
         self.b = {}
-        self.segmentGraph = SegmentGraph(multiCondSet)
+        self.segmentGraph = SegmentGraph()
         self.segmentGraph.mark_start(self.start)
         compile_graph(self.compiledGraph, self.compiledGraphRev,
                       self.start, self.b, self.logPobsDict, logPmin, None,
@@ -932,6 +971,14 @@ class LinearState(State):
     pass
 
 
+class VarFilterState(State):
+    'filters obs according to associated variable name via tag var=name'
+    def __call__(self, fromNode, targetVar, obsLabel, edge, parent):
+        obsLabel = obsLabel.get_subset(var=targetVar.label)
+        newLabel = targetVar.get_obs_label(obsLabel, parent)
+        return Node(self, newLabel)
+
+
 class FilterState(State):
     'filters observations according to tag=value kwargs'
     def __init__(self, name, emission, **tags):
@@ -1043,12 +1090,8 @@ def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent, segmentGraph):
     else:
         fromNodes = (node,) # generate edges from this node
     for fromNode in fromNodes:
-        try:  # multicondition edges
-            variables = segmentGraph.multiCondSet(fromNode, parent)
-        except KeyError:
-            variables = []
         targets = []
-        variables += node.get_children(fromNode, parent) # regular edges
+        variables = node.get_children(fromNode, parent) # regular edges
         multiDest = len(variables) > 1
         for varStates in variables: # generate multiple dependencies
             d = {}

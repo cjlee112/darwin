@@ -16,7 +16,7 @@ def pheno1_setup(modelWh, modelPu):
     stop = model.StopState(useObsLabel=False)
     term = model.StateGraph({pstate:{stop:1.}, wstate:{stop:1.}})
     branches = model.BranchGenerator('chi', prior, iterTag='plantID')
-    dg = model.DependencyGraph({'START':{branches:{}}, 'chi':{'chi':term}})
+    dg = model.DependencyGraph({'START':{branches:{}}, 'chi':{'STOP':term}})
 
     obsSet = model.ObsSet('plants')
     for plant in range(2): # two white plants
@@ -62,7 +62,7 @@ def mating_test(species, priors=None, **kwargs):
     branches = model.BranchGenerator('chi', prior, iterTag='matingID')
     stop = model.StopState(useObsLabel=False)
     term = model.StateGraph({mstate:{stop:1.}})
-    dg = model.DependencyGraph({'START':{branches:{}}, 'chi':{'chi':term}})
+    dg = model.DependencyGraph({'START':{branches:{}}, 'chi':{'STOP':term}})
 
     obsSet = model.ObsSet('mating obs')
     obsSet.add_obs(species[0].rvs(3), matingID=0)
@@ -83,3 +83,28 @@ def mating_test(species, priors=None, **kwargs):
         print 'mating %s:\tlogP = %1.3f, %1.3f, %1.3f' % \
               tuple([str(t)] + llDict[obsLabel])
         
+def multicond_test(modelWh, modelPu):
+    '''This test creates nodes representing mom, dad and the child,
+    with a multi-cond edge from (mom,dad) --> child'''
+    pstate = model.VarFilterState('Pu', modelPu)
+    wstate = model.VarFilterState('Wh', modelWh)
+    prior = model.StateGraph({'START':{pstate:0.9, wstate:0.1}})
+    stop = model.StopState(useObsLabel=False)
+    term = model.StateGraph({pstate:{stop:1.}, wstate:{stop:1.},
+                             robomendel.noneState:{stop:1.}})
+
+    sct = robomendel.SpeciesCrossTransition()
+
+    dg = model.DependencyGraph({'START':{'mom':prior, 'dad':prior},
+                                ('mom', 'dad'):{'child':sct},
+                                'child':{'STOP':term}})
+
+    obsSet = model.ObsSet('mating obs')
+    obsSet.add_obs(modelWh.rvs(1),var='mom')
+    obsSet.add_obs(modelWh.rvs(1),var='dad')
+    obsSet.add_obs(modelWh.rvs(1),var='child')
+
+    m = model.Model(dg, obsSet)
+    print 'logP:', m.segmentGraph.p_forward(m.logPobsDict)
+    return m
+

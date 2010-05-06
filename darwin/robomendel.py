@@ -149,5 +149,24 @@ class SpeciesCrossModel(object):
         Expects (parent1, parent2, progeny) observation vector.'''
         return self.p_obs(obs[0], obs[1], obs[2])
 
+noneState = model.VarFilterState('None', model.EmissionDict({None:1.}))
 
         
+class SpeciesCrossTransition(object):
+    'state-graph for conditioning on both parents'
+    def __init__(self, pHybrid=0., pFail=0.001):
+        self.pHybrid = pHybrid
+        self.pFail = pFail
+
+    def __call__(self, sources, targetVar, state=None, parent=None):
+        mom, dad = sources # raise ValueError if wrong number of sources
+        if targetVar.obsLabel is not None:
+            obsLabel = targetVar.obsLabel
+        else:
+            obsLabel = mom.var.obsLabel
+        noProgeny = noneState(mom, targetVar, obsLabel, 1., parent)
+        child = mom.state(mom, targetVar, obsLabel, 1., parent)
+        if mom.state == dad.state: # species match
+            return {child:1. - self.pFail, noProgeny:self.pFail}
+        else:
+            return {child:self.pHybrid, noProgeny:1. - self.pHybrid}
