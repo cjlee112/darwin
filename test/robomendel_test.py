@@ -83,9 +83,7 @@ def mating_test(species, priors=None, **kwargs):
         print 'mating %s:\tlogP = %1.3f, %1.3f, %1.3f' % \
               tuple([str(t)] + llDict[obsLabel])
         
-def multicond_test(modelWh, modelPu):
-    '''This test creates nodes representing mom, dad and the child,
-    with a multi-cond edge from (mom,dad) --> child'''
+def multicond_setup(modelWh, modelPu):
     pstate = model.VarFilterState('Pu', modelPu)
     wstate = model.VarFilterState('Wh', modelWh)
     prior = model.StateGraph({'START':{pstate:0.9, wstate:0.1}})
@@ -94,7 +92,12 @@ def multicond_test(modelWh, modelPu):
                              robomendel.noneState:{stop:1.}})
 
     sct = robomendel.SpeciesCrossTransition()
+    return pstate, wstate, prior, stop, term, sct
 
+def multicond_test(modelWh, modelPu):
+    '''This test creates nodes representing mom, dad and the child,
+    with a multi-cond edge from (mom,dad) --> child'''
+    pstate, wstate, prior, stop, term, sct = multicond_setup(modelWh, modelPu)
     dg = model.DependencyGraph({'START':{'mom':prior, 'dad':prior},
                                 ('mom', 'dad'):{'child':sct},
                                 'child':{'STOP':term}})
@@ -103,6 +106,30 @@ def multicond_test(modelWh, modelPu):
     obsSet.add_obs(modelWh.rvs(1),var='mom')
     obsSet.add_obs(modelWh.rvs(1),var='dad')
     obsSet.add_obs(modelWh.rvs(1),var='child')
+
+    m = model.Model(dg, obsSet)
+    print 'logP:', m.segmentGraph.p_forward(m.logPobsDict)
+    return m
+
+def multicond2_test(modelWh, modelPu):
+    '''This test creates nodes representing mom, dad and the child,
+    with a multi-cond edge from (mom,dad) --> child
+    and tests two different matings simultaneously.'''
+    pstate, wstate, prior, stop, term, sct = multicond_setup(modelWh, modelPu)
+    moms = model.BranchGenerator('mom', prior, iterTag='matingID')
+    dads = model.BranchGenerator('dad', prior, iterTag='matingID')
+    dg = model.DependencyGraph({'START':{moms:{}, dads:{}},
+                                ('mom', 'dad'):{'child':sct},
+                                'child':{'STOP':term}},
+                               joinTags=('matingID',))
+
+    obsSet = model.ObsSet('mating obs')
+    obsSet.add_obs(modelWh.rvs(1),var='mom', matingID=0)
+    obsSet.add_obs(modelWh.rvs(1),var='dad', matingID=0)
+    obsSet.add_obs(modelWh.rvs(1),var='child', matingID=0)
+    obsSet.add_obs(modelPu.rvs(1),var='mom', matingID=1)
+    obsSet.add_obs(modelPu.rvs(1),var='dad', matingID=1)
+    obsSet.add_obs(modelPu.rvs(1),var='child', matingID=1)
 
     m = model.Model(dg, obsSet)
     print 'logP:', m.segmentGraph.p_forward(m.logPobsDict)

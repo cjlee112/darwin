@@ -204,12 +204,18 @@ class MultiEdgeSet(object):
 class DependencyGraph(object):
     labelClass = Variable
 
-    def __init__(self, graph):
+    def __init__(self, graph, joinTags=()):
         '''graph should be dict of {sourceLabel:{destLabel:stateGraph}}
         edges.  destLabel can be a Variable object (allowing you to
         specify a cross-connection to a node in another graph),
         or simply any Python value, in which case it will be treated
-        as label for creating a Variable.'''
+        as label for creating a Variable.
+
+        joinTags is a tuple of zero or more tag keys which should
+        be used for matching multicond variables by their observation
+        labels.  For example, if you want multicond joins only
+        on variables that share the same value of the matingID tag,
+        set joinTags=("matingID",).'''
         multiCond = {}
         for k, targets in graph.items():
             if isinstance(k, tuple): # multiple conditions
@@ -219,6 +225,7 @@ class DependencyGraph(object):
         self.multiCond = multiCond # {label:(sourceLabels, targets)}
         self.multiCondVar = {} # {sourceVar:{destVar:multiCond}}
         self.multiCondBind = {} # {sourceLabel:[multicond,...]}
+        self.joinTags = joinTags
 
     def __getitem__(self, node):
         'get dict of {targetVariable:stateGraph} pairs'
@@ -235,33 +242,39 @@ class DependencyGraph(object):
                     results[self.get_var(newlabel)] = edge
             else:
                 results[self.get_var(label)] = edge
-
+        # next, process multicond edges
         try: # this variable already part of an existing multicond?
-            results.update(self.multiCondVar[node.var])
+            results.update(self.multiCondVar[node.var]) # ok, done!
         except KeyError:
             try: # need to bind this variable to existing multicond?
-                for multiCond in self.multiCondBind[node.var.label]:
-                    self.multiCondVar.setdefault(node.var, {}) \
-                           [multiCond.targetVar] = multiCond
-                    multiCond.bind_var(node.var)
-                del self.multiCondBind[node.var.label]
+                multiSet = self.multiCondBind[node.var.label]
+                joinTags = tuple([node.var.obsLabel.tags[tag]
+                                  for tag in self.joinTags])
+                multiCond = multiSet[joinTags]
             except KeyError:
                 try:
                     sourceLabels, targets = self.multiCond[node.var.label]
                 except KeyError: # node.var has no multicond children
                     return results # so nothing further to do
-                else: # create a new multicond relation
-                    for destLabel, sg in targets.items():
-                        destVar = self.get_var(destLabel)
-                        multiCond = MultiCondition(sourceLabels,
-                                                   destVar, sg)
-                        multiCond.bind_var(node.var)
-                        self.multiCondVar.setdefault(node.var, {}) \
-                               [destVar] = multiCond
-                        for label in sourceLabels: # link to labels
-                            if label != node.var.label:
-                                self.multiCondBind.setdefault(label, []) \
-                                         .append(multiCond)
+                # create a new multicond relation
+                joinTags = tuple([node.var.obsLabel.tags[tag]
+                                  for tag in self.joinTags])
+                for destLabel, sg in targets.items():
+                    destVar = self.get_var(destLabel)
+                    multiCond = MultiCondition(sourceLabels,
+                                               destVar, sg)
+                    multiCond.bind_var(node.var)
+                    self.multiCondVar.setdefault(node.var, {}) \
+                           [destVar] = multiCond
+                    for label in sourceLabels: # link to labels
+                        if label != node.var.label:
+                            self.multiCondBind.setdefault(label, {}) \
+                                     [joinTags] = multiCond
+            else: # bind this variable to existing multicond
+                self.multiCondVar.setdefault(node.var, {}) \
+                           [multiCond.targetVar] = multiCond
+                multiCond.bind_var(node.var)
+                del self.multiCondBind[node.var.label]
             results.update(self.multiCondVar[node.var])
         return results
 
