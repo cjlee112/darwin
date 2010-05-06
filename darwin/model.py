@@ -185,32 +185,6 @@ class MultiCondition(object):
                     yield (state,) + substates
             
 
-    def generate_vectors(self, newState):
-        q = []
-        vectors = []
-        for var in self.conditions:
-            if var == newState.var:
-                q.append((newState,))
-            else:
-                q.append(self.states[var])
-        i = 0
-        v = [None] * len(q)
-        it = [iter(l) for l in q]
-        while i >= 0:
-            while i >= 0 and i < len(q):
-                try:
-                    v[i] = it[i].next()
-                except StopIteration:
-                    it[i] = iter(q[i]) # reset iterator
-                    i -= 1 # backtrack to previous iterator
-                else:
-                    i += 1 # advance to next iterator
-            if i >= 0:
-                vectors.append(tuple(v))
-                i -= 1 # backtrack to last iterator
-        return vectors
-
-
 class MultiEdge(object):
     def __init__(self, vec, dest, edge):
         self.vec = vec
@@ -242,9 +216,9 @@ class DependencyGraph(object):
                 for sourceLabel in k:
                     multiCond[sourceLabel] = (k, targets)
         self.graph = graph
-        self.multiCond = multiCond
-        self.multiCondVar = {}
-        self.multiCondBind = {}
+        self.multiCond = multiCond # {label:(sourceLabels, targets)}
+        self.multiCondVar = {} # {sourceVar:{destVar:multiCond}}
+        self.multiCondBind = {} # {sourceLabel:[multicond,...]}
 
     def __getitem__(self, node):
         'get dict of {targetVariable:stateGraph} pairs'
