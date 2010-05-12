@@ -93,13 +93,26 @@ class StartNode(Node):
 
 
 class StopNode(Node):
+    'treats differing obsLabel as distinct Node states'
     def __init__(self, graph, obsLabel=None, parent=None):
-        Node.__init__(self, 'STOP', Variable(graph, 'STOP', obsLabel, parent))
+        Node.__init__(self, 'STOP',
+                      StopVariable(graph, 'STOP', obsLabel, parent))
         self.isub = 'STOP' # dummy value
+
+    def __hash__(self):
+        return hash((self.state, self.var, self.var.obsLabel))
+
+    def __cmp__(self, other):
+        try:
+            return cmp((self.state, self.var, self.var.obsLabel),
+                       (other.state, other.var, other.var.obsLabel))
+        except AttributeError:
+            return cmp(id(self), id(other))
+
 
 
 class Variable(object):
-    '''Reference to a specific vertex in a graph'''
+    '''a variable in a dependency graph'''
     def __init__(self, graph, label, obsLabel=None, parent=None):
         self.graph = graph
         self.label = label
@@ -120,6 +133,7 @@ class Variable(object):
         return str((self.label, self.obsLabel))
 
     def get_obs_label(self, obsLabel, parent=None):
+        'get Variable with same label but new obsLabel'
         if parent is None:
             parent = self.parent
         return self.__class__(self.graph, self.label, obsLabel, parent)
@@ -133,12 +147,22 @@ class Variable(object):
         else:
             return self.obsLabel.get_subset(**tags).get_obs()
 
-    def __len__(self):
-        'Get count of descendants'
-        return len(self.graph[self])
+
+class StopVariable(Variable):
+    'modifies hash so differing obsLabels are treated as same variable'
+    def __hash__(self):
+        return hash((self.graph, self.label, id(self.parent)))
+
+    def __cmp__(self, other):
+        try:
+            return cmp((self.graph, self.label, id(self.parent)),
+                  (other.graph, other.label, id(other.parent)))
+        except AttributeError:
+            return cmp(id(self), id(other))
 
 
 class MultiCondition(object):
+    'represents a variable dependency conditioned on multiple variables'
     def __init__(self, conditions, targetVar, stateGraph):
         self.conditions = conditions
         self.targetVar = targetVar
