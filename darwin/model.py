@@ -363,11 +363,14 @@ class Segment(object):
     def get_predecessors(self):
         'generate all segments that this segment depends on'
         try:
+            return self._predecessors
+        except AttributeError:
+            pass
+        try:
             predecessors = self.segmentGraph.gRevVars[self.startVar]
         except KeyError:
-            return # no predecessors
-        for var in predecessors:
-            yield self.segmentGraph.varDict[var]
+            return () # no predecessors
+        return [self.segmentGraph.varDict[var] for var in predecessors]
 
     def count_branches(self):
         try:
@@ -377,7 +380,7 @@ class Segment(object):
 
     def find_loop_starts(self):
         'scan predecessors of this segment to identify loops and their start points'
-        l = list(self.get_predecessors())
+        l = self.get_predecessors()
         results = {}
         for i, branch1 in enumerate(l):
             deps1 = branch1.generate_dependencies()
@@ -431,6 +434,29 @@ def p_segment(dest, f, logPobsDict, g):
     else:  # zero probability
         f[dest] = neginf
         
+def p_branch(states, fstart, logPobsDict):
+    l = []
+    for source, p in states.items():
+        l.append(fstart[source] + logPobsDict[source] + safe_log(p))
+    return log_sum_list(l)
+
+def p_loop(loopStart, branches, edges, fprob, fstart, logPobsDict):
+    lsStates = loopStart.varStates[loopStart.stopVar]
+    l = []
+    for lsState in lsStates: # sum over all loopStart states
+        # calculate forward up to loopStart
+        logP2 = fstart[lsState] + logPobsDict[lsState]
+        loopCalc = fprob[lsState] # condition on loopStart
+        for branch in branches:
+            l2 = []
+            for source, p in edges[branch].items():
+                l2.append(loopCalc[source] + logPobsDict[source] +
+                          safe_log(p))
+            logP2 += log_sum_list(l2)
+        l.append(logP2)
+    return log_sum_list(l) # product of different loops
+
+
 
 class SegmentGraph(object):
     '''reduced representation as a graph whose nodes are unbranched segments,
@@ -501,19 +527,30 @@ class SegmentGraph(object):
 
     def get_stop_segment(self):
         'create a segment representing the STOP state'
-        stop = self.stops.keys()[0] # use this as our canonical stop state
-        stopSegment = Segment(stop.var, self)
-        self.varDict[stop.var] = stopSegment
-        endVars = set() # find all vars with edge to STOP
+        stopVar = self.stops.keys()[0].var
+        stopSegment = Segment(stopVar, self)
+        self.varDict[stopVar] = stopSegment
+        termSegs = set() # find all segments with edge to STOP
         edges = {}
+        conts = {}
+        contSeg = None
         for dest, sources in self.stops.items():
             for source, p in sources.items():
-                edges.setdefault(source.var, {})[source] = p
-                endVars.add(source.var)
-        self.gRevVars[stop.var] = tuple(endVars)
-        for sourceVar in endVars:
-            self.g.setdefault(sourceVar, []).append(stop.var)
-        return stopSegment, stop, edges
+                seg = self.varDict[source.var]
+                if dest.var.obsLabel is not None:
+                    if contSeg is None or contSeg == seg:
+                        conts.setdefault(dest, {})[source] = p
+                        contSeg = seg
+                    else:
+                        raise ValueError('multiple continuation segments!')
+                else:
+                    edges.setdefault(seg, {})[source] = p
+                    termSegs.add(seg)
+        if contSeg is not None:
+            stopSegment._predecessors = tuple(termSegs) + (contSeg,)
+        else:
+            stopSegment._predecessors = tuple(termSegs)
+        return stopSegment, contSeg, termSegs, conts, edges
     
     def p_backward(self, logPobsDict):
         'simple backwards probability calculation'
@@ -534,36 +571,30 @@ class SegmentGraph(object):
 
     def p_forward(self, logPobsDict):
         'loop-aware forward probability calculation'
-        stopSegment, stop, edges = self.get_stop_segment()
+        stopSegment, contSeg, termSegs, conts, edges = self.get_stop_segment()
         self.analyze_deps(stopSegment)
         for segment in self.segments: # analyze segment loop structure
             segment.find_loop_starts()
-        fprob = ForwardProbability(self, logPobsDict) # probability graph
-        fstart = fprob[self.start] # condition on START state
+        self.fprob = ForwardProbability(self, logPobsDict) # probability graph
+        fstart = self.fprob[self.start] # condition on START state
         logP = 0.
-        for sourceVar, states in edges.items(): # non loop branches
-            if self.varDict[sourceVar] not in stopSegment.loopBranches:
-                l = []
-                for source, p in states.items():
-                    l.append(fstart[source] + logPobsDict[source] +
-                             safe_log(p))
-                logP += log_sum_list(l)
         for loopStart, branches in stopSegment.loopStarts.items():
-            lsStates = loopStart.varStates[loopStart.stopVar]
-            l = []
-            for lsState in lsStates: # sum over all loopStart states
-                # calculate forward up to loopStart
-                logP2 = fstart[lsState] + logPobsDict[lsState]
-                loopCalc = fprob[lsState] # condition on loopStart
-                for branch in branches:
-                    l2 = []
-                    for source, p in edges[branch.stopVar].items():
-                        l2.append(loopCalc[source] + logPobsDict[source] +
-                                  safe_log(p))
-                    logP2 += log_sum_list(l2)
-                l.append(logP2)
-            logP += log_sum_list(l) # product of different loops
-        return logP
+            if contSeg in branches:
+                raise ValueError('subgraph continuation in a loop!')
+            logP += p_loop(loopStart, branches, edges, self.fprob, fstart,
+                           logPobsDict)
+        for sourceSeg, states in edges.items(): # non loop branches
+            if sourceSeg not in stopSegment.loopBranches:
+                logP += p_branch(states, fstart, logPobsDict)
+        results = {}
+        l = []
+        for dest, states in conts.items():
+            logPdest = p_branch(states, fstart, logPobsDict)
+            results[dest] = logP + logPdest
+            l.append(logPdest)
+        if l:
+            logP += log_sum_list(l)
+        return logP, results
 
     def seed_forward(self, condition, f):
         'add terminations for forward calc based on condition'

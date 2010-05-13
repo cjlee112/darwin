@@ -108,7 +108,7 @@ def multicond_test(modelWh, modelPu):
     obsSet.add_obs(modelWh.rvs(1),var='child')
 
     m = model.Model(dg, obsSet)
-    print 'logP:', m.segmentGraph.p_forward(m.logPobsDict)
+    print 'logP:', m.segmentGraph.p_forward(m.logPobsDict)[0]
     return m
 
 def multicond2_test(modelWh, modelPu):
@@ -132,6 +132,6 @@ def multicond2_test(modelWh, modelPu):
     obsSet.add_obs(modelPu.rvs(1),var='child', matingID=1)
 
     m = model.Model(dg, obsSet)
-    print 'logP:', m.segmentGraph.p_forward(m.logPobsDict)
+    print 'logP:', m.segmentGraph.p_forward(m.logPobsDict)[0]
     return m
 
