@@ -46,7 +46,7 @@ def math_test(program='2+7'):
     subgraph = DependencyGraph({'theta':{'theta':sg}, 'START':{'theta':prior}})
     mathExpr.subgraph = subgraph
    
-    stopFinal = StopState(useObsLabel=False)
+    stopFinal = LinearStateStop()
     sg = StateGraph({mathExpr:{stopFinal:1.}})
     prior = StateGraph({'START':{mathExpr:1.}})
     hmm = DependencyGraph({'theta':{'theta':sg}, 'START':{'theta':prior}})
