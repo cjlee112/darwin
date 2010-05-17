@@ -110,6 +110,30 @@ class StopNode(Node):
             return cmp(id(self), id(other))
 
 
+class ContinuationNode(StopNode):
+    'node.var guaranteed to match parent.var, but can carry a different obsLabel'
+    def __init__(self, origin, segmentGraph, exitNode=None):
+        if exitNode:
+            var = ProxyVariable(exitNode.var.obsLabel, origin.var)
+            Node.__init__(self, id(self), var)
+            self.exitNode = exitNode
+        else: # just copy parent variable
+            Node.__init__(self, id(self), origin.var)
+        self.origin = origin
+        segmentGraph.varDict[origin.var].varStates[origin.var].add(self)
+
+    def p_subgraph(self, logPobsDict):
+        'calculate total log-prob for subgraph contained in self.origin'
+        try:
+            logP = self.origin.segmentGraph.logPtotal
+        except AttributeError:
+            logP = self.origin.segmentGraph.p_forward(logPobsDict)
+        if hasattr(self, 'exitNode'):
+            return self.origin.segmentGraph.fprob[self.origin.segmentGraph.start]\
+                   [self.exitNode]
+        else:
+            return logP
+
 
 class Variable(object):
     '''a variable in a dependency graph'''
@@ -159,6 +183,23 @@ class StopVariable(Variable):
                   (other.graph, other.label, id(other.parent)))
         except AttributeError:
             return cmp(id(self), id(other))
+
+
+class ProxyVariable(Variable):
+    'compare as equal to proxyVar but keep a different obsLabel'
+    def __init__(self, obsLabel, proxyVar):
+        Variable.__init__(self, proxyVar.graph, proxyVar.label, obsLabel,
+                          proxyVar.parent)
+        self.proxyVar = proxyVar
+
+    def __hash__(self):
+        return hash(self.proxyVar)
+
+    def __eq__(self, other): # required to ensure v == pv matches pv == v
+        return cmp(self.proxyVar, other) == 0
+
+    def __cmp__(self, other):
+        return cmp(self.proxyVar, other)
 
 
 class MultiCondition(object):
@@ -422,23 +463,34 @@ class Segment(object):
 
 def p_segment(dest, f, logPobsDict, g):
     'symmetric calc for either forward or backwards prob on an unbranched segment'
+    try:
+        return f[dest] # already computed, so nothing further to do
+    except KeyError:
+        pass
+    try:
+        origin = dest.origin
+    except AttributeError:
+        pass
+    else: # process this as a subgraph continuation point
+        f[dest] = p_segment(origin, f, logPobsDict, g) \
+                  + dest.p_subgraph(logPobsDict)
+        return
     logP = []
     for src, edge in g[dest].items():
-        try:
-            logP.append(f[src] + logPobsDict[src] + safe_log(edge))
-        except KeyError:  # need to compute this value
-            p_segment(src, f, logPobsDict, g)
-            logP.append(f[src] + logPobsDict[src] + safe_log(edge))
+        logP.append(p_segment(src, f, logPobsDict, g) + logPobsDict[src]
+                    + safe_log(edge))
     if logP: # non-empty list
-        f[dest] = log_sum_list(logP)
+        f[dest] = result = log_sum_list(logP)
     else:  # zero probability
-        f[dest] = neginf
+        f[dest] = result = neginf
+    return result
         
 def p_branch(states, fstart, logPobsDict):
     l = []
     for source, p in states.items():
         l.append(fstart[source] + logPobsDict[source] + safe_log(p))
     return log_sum_list(l)
+
 
 def p_loop(loopStart, branches, edges, fprob, fstart, logPobsDict):
     lsStates = loopStart.varStates[loopStart.stopVar]
@@ -458,6 +510,7 @@ def p_loop(loopStart, branches, edges, fprob, fstart, logPobsDict):
 
 
 
+
 class SegmentGraph(object):
     '''reduced representation as a graph whose nodes are unbranched segments,
     with edges connecting them.  Each segment graph edge is either
@@ -470,6 +523,7 @@ class SegmentGraph(object):
         self.stops = {} # {stop:{source:edge}}
         self.start = None
         self.segments = []
+        self.startSegments = {}
 
     def add_edge(self, source, dest, edge, multiDest):
         '''Save an edge from source node to dest node, either by saving to
@@ -527,7 +581,15 @@ class SegmentGraph(object):
 
     def get_stop_segment(self):
         'create a segment representing the STOP state'
-        stopVar = self.stops.keys()[0].var
+        try: # use cached values if present
+            return self.stopSegment, self.contSeg, self.termSegs, \
+                   self.exitConts, self.exitEdges
+        except AttributeError:
+            pass
+        if self.stops:
+            stopVar = self.stops.keys()[0].var
+        else:
+            raise ValueError('no exit to STOP in this SegmentGraph')
         stopSegment = Segment(stopVar, self)
         self.varDict[stopVar] = stopSegment
         termSegs = set() # find all segments with edge to STOP
@@ -550,6 +612,8 @@ class SegmentGraph(object):
             stopSegment._predecessors = tuple(termSegs) + (contSeg,)
         else:
             stopSegment._predecessors = tuple(termSegs)
+        self.stopSegment, self.contSeg, self.termSegs, self.exitConts, \
+               self.exitEdges = stopSegment, contSeg, termSegs, conts, edges
         return stopSegment, contSeg, termSegs, conts, edges
     
     def p_backward(self, logPobsDict):
@@ -586,15 +650,15 @@ class SegmentGraph(object):
         for sourceSeg, states in edges.items(): # non loop branches
             if sourceSeg not in stopSegment.loopBranches:
                 logP += p_branch(states, fstart, logPobsDict)
-        results = {}
         l = []
         for dest, states in conts.items():
             logPdest = p_branch(states, fstart, logPobsDict)
-            results[dest] = logP + logPdest
+            fstart[dest] = logP + logPdest
             l.append(logPdest)
         if l:
             logP += log_sum_list(l)
-        return logP, results
+        self.logPtotal = logP
+        return logP
 
     def seed_forward(self, condition, f):
         'add terminations for forward calc based on condition'
@@ -672,6 +736,9 @@ class ForwardDict(object):
                 l.append(logP)
             self.f[dest] = log_sum_list(l)
         return self.f[dest]
+
+    def __setitem__(self, dest, logP):
+        self.f[dest] = logP
 
 
 class ForwardProbability(object):
@@ -1100,16 +1167,34 @@ class EmissionDict(dict):
                     break
         return obs
 
+
 def compile_subgraph(g, gRev, node, b, logPobsDict, logPmin, segmentGraph):
     'recurse to subgraph of this node; creates node.stops as list of endnodes'
+    segmentGraph.varDict[node.var].varStates.setdefault(node.var, set()).add(node)
     node.stops = {} # for list of unique stop nodes in this subgraph
     start = StartNode(node.state.subgraph, obsLabel=node.var.obsLabel,
                       parent=node)
+    node.segmentGraph = SegmentGraph()
+    node.segmentGraph.mark_start(start)
     logPobsDict[start] = 0.
     g[node] = ({start:1.},) # save edge from node to start of its subgraph
     gRev.setdefault(start, {})[node] = 1.
+    print '\n\npush', node
     compile_graph(g, gRev, start, b, logPobsDict, logPmin, node,
-                  segmentGraph) # subgraph
+                  node.segmentGraph) # subgraph
+    try:
+        node.segmentGraph.get_stop_segment() # find exitConts for extending node
+    except ValueError: # no exit to STOP
+        print "pop", node, '\tNO EXIT\n\n'
+        node.stops = ()
+        return
+    print "pop", node, len(node.segmentGraph.exitConts), '\n\n'
+    if len(node.segmentGraph.exitConts) > 0: # use the exitConts as continuation states
+        node.stops = [ContinuationNode(node, segmentGraph, c)
+                      for c in node.segmentGraph.exitConts]
+    else: # create a single continuation state
+        node.stops = (ContinuationNode(node, segmentGraph),)
+
 
 def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent, segmentGraph):
     '''Generate complete traversal of variable / observation / state graphs
@@ -1146,13 +1231,15 @@ def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent, segmentGraph):
                     logPobsDict[dest] = logPobs = dest.log_p_obs()
                     if dest.state == 'STOP': # terminate the path
                         if parent is not None: # add to parent's stop-node list
-                            parent.stops[dest] = None
+                            segmentGraph.mark_end(dest)
+                            # parent.stops[dest] = None
                         else: # backwards probability of terminal node = 1
                             segmentGraph.mark_end(dest)
                             b[dest] = 0.
                         g[dest] = () # prevent recursion on dest
                 if logPobs <= logPmin:
                     continue # truncate: do not recurse to dest
+                print fromNode, '--->', dest
                 segmentGraph.add_edge(fromNode, dest, edge, multiDest) # rm next 2 lines
                 gRev.setdefault(dest, {})[fromNode] = edge # save reverse graph
                 d[dest] = edge

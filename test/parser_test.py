@@ -46,8 +46,8 @@ def math_test(program='2+7'):
     subgraph = DependencyGraph({'theta':{'theta':sg}, 'START':{'theta':prior}})
     mathExpr.subgraph = subgraph
    
-    stopIfDone = LinearStateStop() # stop if obs exhausted
-    sg = StateGraph({mathExpr:{mathExpr:1., stopIfDone:1.}})
+    stopFinal = StopState(useObsLabel=False)
+    sg = StateGraph({mathExpr:{stopFinal:1.}})
     prior = StateGraph({'START':{mathExpr:1.}})
     hmm = DependencyGraph({'theta':{'theta':sg}, 'START':{'theta':prior}})
     obsLabel = ObsSequenceLabel(program)
