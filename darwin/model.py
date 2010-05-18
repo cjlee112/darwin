@@ -85,6 +85,49 @@ class Node(object):
         'compute total log-likelihood for all obs emitted by this node'
         return sum(self.get_ll())
 
+    def walk(self, g):
+        if self in g:
+            return
+        g[self] = d = {}
+        try:
+            edges = self.var.seg.g[self]
+        except KeyError:
+            pass
+        else:
+            for dest, e in edges.items(): # edges w/in segment
+                d[dest] = e
+                dest.walk(g)
+        try:
+            substart = self.segmentGraph.start # this node contains subgraph
+        except AttributeError:
+            pass
+        else:
+            d[substart] = 1.
+            substart.walk(g) # walk subgraph
+        if self in self.var.seg.exitStates: # walk edges to next segment(s)
+            try:
+                segs = self.var.seg.segmentGraph.g[self.var.seg]
+            except KeyError:
+                pass
+            else:
+                for seg in segs:
+                    for dest, edges in self.var.seg.segmentGraph.gRev[seg].items():
+                        for sources, e in edges.items():
+                            if self in sources:
+                                ## print 'LINK', self, dest
+                                d[dest] = e
+                                dest.walk(g)
+                                break
+
+            for dest, sources in self.var.seg.segmentGraph.stops.items():
+                try:
+                    d[dest] = sources[self] # add edge to STOP if present
+                except KeyError:
+                    pass
+                else:
+                    g.setdefault(dest, {}) # ensure STOP node included in graph
+                    
+        
 
 class StartNode(Node):
     startNewSeg = True
@@ -102,7 +145,7 @@ class StopNode(Node):
         self.isub = 'STOP' # dummy value
 
 
-class ContinuationNode(StopNode):
+class ContinuationNode(Node):
     'continuation point after completing subgraph contained in node origin'
     def __init__(self, origin, exitNode=None):
         if exitNode:
@@ -124,6 +167,15 @@ class ContinuationNode(StopNode):
                    [self.exitNode]
         else:
             return logP
+
+    def walk(self, g):
+        Node.walk(self, g)
+        try:
+            substop = self.exitNode
+            g.setdefault(substop, {})[self] = 1.
+        except AttributeError:
+            for substop in self.origin.segmentGraph.stops:
+                g.setdefault(substop, {})[self] = 1.
 
 
 class Variable(object):
@@ -185,7 +237,7 @@ class MultiCondition(object):
     def __call__(self, node, targetVar, state=None, parent=None):
         'generate all possible multicond edge vectors for node in cumm. order'
         self.states[node.var].append(node)
-        print 'Multicondition(%s)' % repr(node)
+        ## print 'Multicondition(%s)' % repr(node)
         if self.nBind < len(self.conditions):
             return {} # incomplete bindings, so do nothing now...
         l = []
@@ -193,7 +245,7 @@ class MultiCondition(object):
             for dest, edge in self.stateGraph(vec, self.targetVar,
                                               parent=parent).items():
                 l.append(MultiEdge(vec, dest, edge))
-                print '\t', vec, dest, edge
+                ## print '\t', vec, dest, edge
         return MultiEdgeSet(l)
 
     def gen_vec2(self, iConst, i=0):
@@ -267,7 +319,10 @@ class DependencyGraph(object):
         for label,edge in d.items(): # process Markov edges
             if callable(label): # treat as function for generating target dict
                 for newlabel, edge in label(node, **edge).items():
-                    results[self.get_var(newlabel, seg=node.var.seg)] = edge
+                    newVar = self.get_var(newlabel, obsLabel=node.var.obsLabel,
+                                          seg=node.var.seg)
+                    results[newVar] = edge
+                    ## print 'added', newlabel, 'to results:', len(results)
             else:
                 results[self.get_var(label, seg=node.var.seg)] = edge
         # next, process multicond edges
@@ -290,8 +345,7 @@ class DependencyGraph(object):
                 joinTags = tuple([node.var.obsLabel.tags[tag]
                                   for tag in self.joinTags])
                 for destLabel, sg in targets.items():
-                    seg = node.var.seg.get_child(destLabel)
-                    destVar = self.get_var(destLabel, seg=seg)
+                    destVar = self.get_var(destLabel, obsLabel=node.var.obsLabel)
                     multiCond = MultiCondition(sourceLabels,
                                                destVar, sg)
                     multiCond.bind_var(node.var)
@@ -307,14 +361,15 @@ class DependencyGraph(object):
                 multiCond.bind_var(node.var)
                 del self.multiCondBind[node.var.label]
             mcResults = self.multiCondVar[node.var]
-        self.set_var_segments(results.keys(), node.var.seg) # put in child segments
         results.update(mcResults)
+        self.set_var_segments(results.keys(), node.var.seg) # put in child segments
         return results
 
     def set_var_segments(self, vars, seg):
         'put these variables in separate segments as children of seg'
         for var in vars:
-            var.seg = seg.get_child(var.label)
+            joinTags = tuple([var.obsLabel.tags[tag] for tag in self.joinTags])
+            var.seg = seg.get_child(var.label, joinTags)
 
     def get_start(self, **kwargs):
         'get START node for this graph'
@@ -365,7 +420,7 @@ class Segment(object):
         if node:
             self.add_entry(node)
         self.segmentGraph = segmentGraph
-        segmentGraph.segments.append(self) # add to list of all segments
+        segmentGraph.segments.append(self) # add to list of all segments        
 
     def add_entry(self, node):
         self.entryStates.add(node)
@@ -380,14 +435,15 @@ class Segment(object):
         self.g.setdefault(source, {})[dest] = edge
         self.gRev.setdefault(dest, {})[source] = edge
 
-    def get_child(self, k):
+    def get_child(self, k, joinTags):
         'return child segment with index value k'
         if k == 'STOP':
             return self.segmentGraph.stopSegment
         try:
-            return self.children[k]
+            return self.children[k, joinTags]
         except KeyError:
-            self.children[k] = seg = self.__class__(self.segmentGraph)
+            ## print 'created new child segment for var.label', k, joinTags
+            self.children[k, joinTags] = seg = self.__class__(self.segmentGraph)
             return seg
 
     def get_predecessors(self):
@@ -403,7 +459,7 @@ class Segment(object):
 
     def count_branches(self):
         try:
-            return len(self.segmentGraph.g[self.stopVar])
+            return len(self.segmentGraph.g[self])
         except (KeyError, AttributeError):
             return 0
 
@@ -541,11 +597,12 @@ class SegmentGraph(object):
         if dest.var.seg not in self.gRevSegs: # new seg-seg edge
             for source in edge.vec:
                 self.g.setdefault(source.var.seg, set()).add(dest.var.seg)
-                source.var.seg.add_exit(source)
             self.gRev[dest.var.seg] = {}
             self.gRevSegs[dest.var.seg] = tuple([source.var.seg for source in
                                                  edge.vec])
         self.gRev[dest.var.seg].setdefault(dest, {})[edge.vec] = edge.edge
+        for source in edge.vec:
+            source.var.seg.add_exit(source)
 
     def mark_end(self, node):
         'mark node as STOP'
@@ -685,8 +742,10 @@ class ForwardDict(object):
             for sources, p in segment.segmentGraph.gRev[segment][dest]\
                     .items():
                 logP = safe_log(p) # process non-loop branches
+                ## print 'multicond edge -->', dest, logP
                 for branch in segment.get_non_loop_branches(sources):
-                    logP += self[branch]
+                    ## print '\tfrom', branch, self[branch] + self.parent.logPobsDict[branch]
+                    logP += self[branch] + self.parent.logPobsDict[branch]
                 for loopStart, branches in segment.get_loop_branches(sources):
                     lsStates = loopStart.exitStates
                     l2 = []
@@ -696,6 +755,7 @@ class ForwardDict(object):
                                 self.parent.logPobsDict[lsState]
                         loopCalc = self.parent[lsState] # condition on loopStart
                         for branch in branches:
+                            ## print '\tloop', branch, loopCalc[branch] + self.parent.logPobsDict[branch]
                             logP2 += loopCalc[branch] + \
                                 self.parent.logPobsDict[branch]
                         l2.append(logP2)
@@ -953,9 +1013,11 @@ class Model(object):
         return posterior_ll(self.f)
 
     def save_graphviz(self, filename, **kwargs):
+        g = {}
+        self.start.walk(g) # generate node graph
         outfile = file(filename, 'w')
         try:
-            save_graphviz(outfile, self.compiledGraph, self.posterior, **kwargs)
+            save_graphviz(outfile, g, None, **kwargs)
         finally:
             outfile.close()
 
@@ -1203,7 +1265,7 @@ def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent, segmentGraph):
                         g[dest] = () # prevent recursion on dest
                 if logPobs <= logPmin:
                     continue # truncate: do not recurse to dest
-                print fromNode, '--->', dest
+                ## print fromNode, '--->', dest
                 segmentGraph.add_edge(fromNode, dest, edge, multiDest) # rm next 2 lines
                 gRev.setdefault(dest, {})[fromNode] = edge # save reverse graph
                 d[dest] = edge
@@ -1302,29 +1364,86 @@ def posterior_ll(f):
                             for iobs in range(1, nobs)]
     return llDict
 
+
+class Graphviz(object):
+    'simple dot format writer; handles nested subgraphs correctly, unlike gvgen'
+    def __init__(self):
+        self.content = {}
+        self.edges = {}
+        self.nodes = []
+        self.toplevel = []
+
+    def add_node(self, label, parent=None):
+        i = len(self.nodes)
+        self.nodes.append(dict(label=label))
+        if parent is not None:
+            try:
+                self.content[parent].append(i)
+            except KeyError:
+                self.content[parent] = [i]
+        else:
+            self.toplevel.append(i)
+        return i
+
+    def add_edge(self, node1, node2, label=None):
+        self.edges.setdefault(node1, {})[node2] = label
+
+    def print_branch(self, ifile, node, level=1):
+        try:
+            children = self.content[node]
+        except KeyError:
+            print >>ifile, '  ' * level + self.node_repr(node) + ' [label="' \
+                  + self.nodes[node]['label'] + '"];'
+        else:
+            print >>ifile, '  ' * level + 'subgraph ' + self.node_repr(node) \
+                  + ' {\n' + '  ' * level + 'label="' \
+                  + self.nodes[node]['label'] + '";'
+            for child in children:
+                self.print_branch(ifile, child, level + 1)
+            print >>ifile, '  ' * level + '}'
+
+    def node_repr(self, node):
+        if node in self.content:
+            return 'cluster' + str(node)
+        else:
+            return 'node' + str(node)
+
+    def print_dot(self, ifile):
+        print >>ifile, 'digraph G {\ncompound=true;'
+        for node in self.toplevel:
+            self.print_branch(ifile, node)
+        for node, edges in self.edges.items():
+            for node2 in edges:
+                print >>ifile, self.node_repr(node) + '->' + self.node_repr(node2) \
+                      + ';'
+        print >>ifile, '}'
+
+
 def save_graphviz(outfile, g, post_f=None, majorColor='red',
                   label_f=lambda x:str(x.state)):
     '''generate dot file from graph g
     post_f, if not None, must be function that returns posterior probability
     of a node
     majorColor is the color assigned to nodes with > 50% probability.'''
-    from gvgen import GvGen
-    gd = GvGen()
+    gd = Graphviz()
     gNodes = {}
     gClusters = {}
     colors = ('black', 'green', 'blue', 'red')
+    iseg = 0
     for node in g:
         try:
             parent = gClusters[node.var]
         except KeyError:
-            parent = gClusters[node.var] = gd.newItem(str(node.var))
-        gNodes[node] = gd.newItem(label_f(node), parent)
-        if post_f and post_f(node) > 0.5:
-            gd.propertyAppend(gNodes[node], 'color', majorColor)
-    for node, dependencies in g.items():
-        for i,targets in enumerate(dependencies):
-            for dest,edge in targets.items():
-                e = gd.newLink(gNodes[node], gNodes[dest])
-                gd.propertyAppend(e, 'color', colors[i % len(colors)])
-    gd.dot(outfile)
+            try:
+                parentSeg = gClusters[node.var.seg]
+            except KeyError:
+                parentSeg = gClusters[node.var.seg] = \
+                            gd.add_node('segment%d' % iseg)
+                iseg += 1
+            parent = gClusters[node.var] = gd.add_node(str(node.var), parentSeg)
+        gNodes[node] = gd.add_node(label_f(node), parent)
+    for node, targets in g.items():
+        for dest, edge in targets.items():
+            gd.add_edge(gNodes[node], gNodes[dest])
+    gd.print_dot(outfile)
 

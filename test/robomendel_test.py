@@ -5,6 +5,7 @@ from darwin import entropy
 from darwin import robomendel
 from scipy import stats
 import numpy
+import math
 
 def get_mix_model(modelWh, modelPu):
     return mixture.Mixture(((0.9, modelPu), (0.1, modelWh)))
@@ -94,24 +95,33 @@ def multicond_setup(modelWh, modelPu):
     sct = robomendel.SpeciesCrossTransition()
     return pstate, wstate, prior, stop, term, sct
 
-def multicond_test(modelWh, modelPu):
+def get_family_obs(mom=(0.,), dad=(1.,), child=(0.5,), **tags):
+    obsSet = model.ObsSet('mating obs')
+    obsSet.add_obs(mom, var='mom', **tags)
+    obsSet.add_obs(dad, var='dad', **tags)
+    obsSet.add_obs(child, var='child', **tags)
+    return obsSet
+
+def multicond_calc(modelWh, modelPu, obsSet):
     '''This test creates nodes representing mom, dad and the child,
     with a multi-cond edge from (mom,dad) --> child'''
     pstate, wstate, prior, stop, term, sct = multicond_setup(modelWh, modelPu)
     dg = model.DependencyGraph({'START':{'mom':prior, 'dad':prior},
                                 ('mom', 'dad'):{'child':sct},
                                 'child':{'STOP':term}})
-
-    obsSet = model.ObsSet('mating obs')
-    obsSet.add_obs(modelWh.rvs(1),var='mom')
-    obsSet.add_obs(modelWh.rvs(1),var='dad')
-    obsSet.add_obs(modelWh.rvs(1),var='child')
-
     m = model.Model(dg, obsSet)
-    print 'logP:', m.segmentGraph.p_forward(m.logPobsDict)
-    return m
+    return m, m.segmentGraph.p_forward(m.logPobsDict)
 
-def multicond2_test(modelWh, modelPu):
+def multicond_test():
+    modelWh = stats.norm(0, 1)
+    modelPu = stats.norm(10, 1)
+    p = modelWh.pdf((0, 1, 0.5)).prod() * 0.01 * 0.999
+    m, logP = multicond_calc(modelWh, modelPu, get_family_obs())
+    print math.log(p), logP
+    if abs(math.log(p) - logP) > math.log(1.02): # trap > 2% error
+        raise ValueError('bad logP value: %1.3f vs %1.3f' %(logP, math.log(p)))
+
+def multicond2_calc(modelWh, modelPu, obsSet):
     '''This test creates nodes representing mom, dad and the child,
     with a multi-cond edge from (mom,dad) --> child
     and tests two different matings simultaneously.'''
@@ -122,7 +132,38 @@ def multicond2_test(modelWh, modelPu):
                                 ('mom', 'dad'):{'child':sct},
                                 'child':{'STOP':term}},
                                joinTags=('matingID',))
+    m = model.Model(dg, obsSet)
+    return m, m.segmentGraph.p_forward(m.logPobsDict)
 
+def multicond2_test():
+    modelWh = stats.norm(0, 1)
+    modelPu = stats.norm(10, 1)
+    obsSet = get_family_obs(matingID=0)
+    m1, logP1 = multicond_calc(modelWh, modelPu, obsSet)
+    m2, logP2 = multicond2_calc(modelWh, modelPu, obsSet)
+    print logP1, logP2
+    if abs(logP1 - logP2) > math.log(1.02): # trap > 2% error
+        raise ValueError('bad logP value: %1.3f vs %1.3f' %(logP1, logP2))
+
+def multicond3_test():
+    modelWh = stats.norm(0, 1)
+    modelPu = stats.norm(10, 1)
+    obsSet1 = get_family_obs()
+    mom2, dad2, child2 = (0.2,), (10.3,), (-0.6,)
+    obsSet2 = get_family_obs(mom=mom2, dad=dad2, child=child2)
+    obsSetBoth = get_family_obs(matingID=0)
+    obsSetBoth.add_obs(mom2, var='mom', matingID=1)
+    obsSetBoth.add_obs(dad2, var='dad', matingID=1)
+    obsSetBoth.add_obs(child2, var='child', matingID=1)
+    m1, logP1 = multicond_calc(modelWh, modelPu, obsSet1)
+    m2, logP2 = multicond_calc(modelWh, modelPu, obsSet2)
+    mBoth, logPBoth = multicond2_calc(modelWh, modelPu, obsSetBoth)
+    print logP1 + logP2, logPBoth
+    if abs(logP1 + logP2 - logPBoth) > math.log(1.02): # trap > 2% error
+        raise ValueError('bad logP value: %1.3f vs %1.3f' %(logP1 + logP2,
+                                                            logPBoth))
+
+def get_2family_obs(modelWh, modelPu):    
     obsSet = model.ObsSet('mating obs')
     obsSet.add_obs(modelWh.rvs(1),var='mom', matingID=0)
     obsSet.add_obs(modelWh.rvs(1),var='dad', matingID=0)
@@ -130,8 +171,4 @@ def multicond2_test(modelWh, modelPu):
     obsSet.add_obs(modelPu.rvs(1),var='mom', matingID=1)
     obsSet.add_obs(modelPu.rvs(1),var='dad', matingID=1)
     obsSet.add_obs(modelPu.rvs(1),var='child', matingID=1)
-
-    m = model.Model(dg, obsSet)
-    print 'logP:', m.segmentGraph.p_forward(m.logPobsDict)
-    return m
 
