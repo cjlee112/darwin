@@ -1,6 +1,7 @@
 from darwin.model import *
 
 from darwin import parser
+import math
 
 def number_test(program='12 33 495'):
     match_f = parser.REMatcher(r"(\d+)")
@@ -53,6 +54,10 @@ def math_test(program='2+7'):
     obsLabel = ObsSequenceLabel(program)
     m = Model(hmm, obsLabel)
 
-    logPobs = m.calc_fb()
-    return m
+    logPobs = m.segmentGraph.p_forward(m.logPobsDict)
+    correct = math.log(0.01 * 0.25)
+    if abs(correct - logPobs) > math.log(1.02):
+        raise ValueError('bad logPobs value: %1.3f vs %1.3f' %(logPobs, correct))
+    #logPobs = m.calc_fb()
+    return m, logPobs
     

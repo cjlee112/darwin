@@ -104,6 +104,8 @@ class Node(object):
         else:
             d[substart] = 1.
             substart.walk(g) # walk subgraph
+            for continuation in self.stops:
+                continuation.walk(g)
         if self in self.var.seg.exitStates: # walk edges to next segment(s)
             try:
                 segs = self.var.seg.segmentGraph.g[self.var.seg]
@@ -607,6 +609,7 @@ class SegmentGraph(object):
     def mark_end(self, node):
         'mark node as STOP'
         self.stops[node] = {}
+        node.var.seg = self.stopSegment
 
     def get_stop_segment(self):
         'analyze the segment representing the STOP state'
@@ -1197,29 +1200,29 @@ class EmissionDict(dict):
 
 def compile_subgraph(g, gRev, node, b, logPobsDict, logPmin, segmentGraph):
     'recurse to subgraph of this node; creates node.stops as list of endnodes'
-    #segmentGraph.varDict[node.var].varStates.setdefault(node.var, set()).add(node)
-    node.stops = {} # for list of unique stop nodes in this subgraph
     node.segmentGraph = SegmentGraph(node.state.subgraph, node.var.obsLabel,
                                      node)
     start = node.segmentGraph.start
     logPobsDict[start] = 0.
     g[node] = ({start:1.},) # save edge from node to start of its subgraph
     gRev.setdefault(start, {})[node] = 1.
-    print '\n\npush', node
+    ## print '\n\npush', node
     compile_graph(g, gRev, start, b, logPobsDict, logPmin, node,
                   node.segmentGraph) # subgraph
     try:
         node.segmentGraph.get_stop_segment() # find exitConts for extending node
     except ValueError: # no exit to STOP
-        print "pop", node, '\tNO EXIT\n\n'
+        ## print "pop", node, '\tNO EXIT\n\n'
         node.stops = ()
         return
-    print "pop", node, len(node.segmentGraph.exitConts), '\n\n'
+    ## print "pop", node, len(node.segmentGraph.exitConts), '\n\n'
     if len(node.segmentGraph.exitConts) > 0: # use the exitConts as continuation states
         node.stops = [ContinuationNode(node, c)
                       for c in node.segmentGraph.exitConts]
     else: # create a single continuation state
         node.stops = (ContinuationNode(node),)
+    for c in node.stops: # mark continuation nodes as having no obs
+        logPobsDict[c] = 0.
 
 
 def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent, segmentGraph):
@@ -1256,11 +1259,8 @@ def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent, segmentGraph):
                 except KeyError:
                     logPobsDict[dest] = logPobs = dest.log_p_obs()
                     if dest.state == 'STOP': # terminate the path
-                        if parent is not None: # add to parent's stop-node list
-                            segmentGraph.mark_end(dest)
-                            # parent.stops[dest] = None
-                        else: # backwards probability of terminal node = 1
-                            segmentGraph.mark_end(dest)
+                        segmentGraph.mark_end(dest)
+                        if parent is None: # backwards probability of terminal = 1
                             b[dest] = 0.
                         g[dest] = () # prevent recursion on dest
                 if logPobs <= logPmin:
