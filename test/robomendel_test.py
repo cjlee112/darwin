@@ -249,3 +249,44 @@ def pl1_test(model_f=family_model):
     print_pl(llDict)
     
     
+def merge_forward_dict(f, logP, result=None):
+    'merge f into result, adjusted by a fixed prior'
+    if result is None:
+        result = {}
+    for k,v in f.items():
+        result[k] = v + logP
+    return result
+
+def subgraph_pl_test(modelDict=dict(mix=mixture_model,
+                                    family=family_model,
+                                    unrelated=unrelated_model)):
+    p = 1./len(modelDict) # uninformative prior
+    modelWh = stats.norm(0, 1)
+    modelPu = stats.norm(10, 1)
+    obsSet = get_family_obs()
+    stop = model.StopState(useObsLabel=False)
+    d = {}
+    d2 = {}
+    for model_name, model_f in modelDict.items(): # build distinct models
+        state = model.SilentState(model_name)
+        state.subgraph = model_f(modelWh, modelPu)
+        d[state] = p
+        d2[state] = {stop:1.}
+    prior = model.StateGraph({'START':d})
+    term = model.StateGraph(d2)
+    dg = model.DependencyGraph({'START':{'model':prior},
+                                'model':{'STOP':term}})
+    m = model.Model(dg, obsSet)
+    m.segmentGraph.p_forward(m.logPobsDict)
+    f = m.segmentGraph.fprob[m.start].f
+    fmerge = {}
+    for node, logP in f.items(): # merge forward calcs from subgraphs
+        try:
+            subgraph = node.segmentGraph
+        except AttributeError:
+            pass
+        else:
+            merge_forward_dict(subgraph.fprob[subgraph.start].f, logP, fmerge)
+    llDict = model.posterior_ll(fmerge)
+    print_pl(llDict)
+    
