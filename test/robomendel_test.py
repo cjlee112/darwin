@@ -105,11 +105,7 @@ def get_family_obs(mom=(0.,), dad=(1.,), child=(0.5,), **tags):
 def multicond_calc(modelWh, modelPu, obsSet):
     '''This test creates nodes representing mom, dad and the child,
     with a multi-cond edge from (mom,dad) --> child'''
-    pstate, wstate, prior, stop, term, sct = multicond_setup(modelWh, modelPu)
-    dg = model.DependencyGraph({'START':{'mom':prior, 'dad':prior},
-                                ('mom', 'dad'):{'child':sct},
-                                'child':{'STOP':term}})
-    m = model.Model(dg, obsSet)
+    m = model.Model(family_model(modelWh, modelPu), obsSet)
     return m, m.segmentGraph.p_forward(m.logPobsDict)
 
 def multicond_test():
@@ -172,3 +168,84 @@ def get_2family_obs(modelWh, modelPu):
     obsSet.add_obs(modelPu.rvs(1),var='dad', matingID=1)
     obsSet.add_obs(modelPu.rvs(1),var='child', matingID=1)
 
+def family_model(modelWh, modelPu):
+    pstate, wstate, prior, stop, term, sct = multicond_setup(modelWh, modelPu)
+    dg = model.DependencyGraph({'START':{'mom':prior, 'dad':prior},
+                                ('mom', 'dad'):{'child':sct},
+                                'child':{'STOP':term}})
+    return dg
+
+def unrelated_model(modelWh, modelPu):
+    'model mom, dad, child as independent'
+    pstate = model.VarFilterState('Pu', modelPu)
+    wstate = model.VarFilterState('Wh', modelWh)
+    prior = model.StateGraph({'START':{pstate:0.9, wstate:0.1}})
+    stop = model.StopState(useObsLabel=False)
+    term = model.StateGraph({pstate:{stop:1.}, wstate:{stop:1.},
+                             robomendel.noneState:{stop:1.}})
+
+    dg = model.DependencyGraph({'START':{'mom':prior, 'dad':prior,
+                                         'child':prior},
+                                'mom':{'STOP':term},
+                                'dad':{'STOP':term},
+                                'child':{'STOP':term}})
+    return dg
+
+def environmental_model(modelWh, modelPu):
+    'model wh / pu as random extrinsic variable'
+    def filter_from_node(fromNode, *args):
+        return dict(var=fromNode.var.label)
+    pstate = model.VarFilterState('Pu', modelPu, filter_f=filter_from_node)
+    wstate = model.VarFilterState('Wh', modelWh, filter_f=filter_from_node)
+    peaSpecies = model.SilentState('pea')
+    prior = model.StateGraph({'START':{peaSpecies:1.}})
+    extSG = model.StateGraph({peaSpecies:{pstate:0.9, wstate:0.1}})
+    stop = model.StopState(useObsLabel=False)
+    term = model.StateGraph({pstate:{stop:1.}, wstate:{stop:1.}})
+    sct = robomendel.SpeciesCrossTransition()
+
+    dg = model.DependencyGraph({'START':{'mom':prior, 'dad':prior},
+                                'mom':{'ext':extSG},
+                                'dad':{'ext':extSG},
+                                ('mom', 'dad'):{'child':sct},
+                                'child':{'ext':extSG},
+                                'ext':{'STOP':term}})
+    return dg
+
+
+
+def mixture_model(modelWh, modelPu):
+    'model process as single species, with mixture emission'
+    mixModel = get_mix_model(modelWh, modelPu)
+    peaSpecies = model.VarFilterState('pea', mixModel)
+    prior = model.StateGraph({'START':{peaSpecies:1.0}})
+    stop = model.StopState(useObsLabel=False)
+    term = model.StateGraph({peaSpecies:{stop:1.}, 
+                             robomendel.noneState:{stop:1.}})
+    sct = robomendel.SpeciesCrossTransition()
+
+    dg = model.DependencyGraph({'START':{'mom':prior, 'dad':prior},
+                                ('mom', 'dad'):{'child':sct},
+                                'child':{'STOP':term}})
+    return dg
+
+
+def basic_pl(segmentGraph):
+    f = segmentGraph.fprob[segmentGraph.start].f # forward prob dictionary
+    return model.posterior_ll(f)
+
+def print_pl(llDict):
+    for obsLabel, ll in llDict.items():
+        print '%s\t%s' % (str(obsLabel), ','.join([('%1.2f' % x) for x in ll]))
+
+def pl1_test(model_f=family_model):
+    modelWh = stats.norm(0, 1)
+    modelPu = stats.norm(10, 1)
+    obsSet = get_family_obs()
+    dg = model_f(modelWh, modelPu)
+    m = model.Model(dg, obsSet)
+    m.segmentGraph.p_forward(m.logPobsDict)
+    llDict = basic_pl(m.segmentGraph)
+    print_pl(llDict)
+    
+    

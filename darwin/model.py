@@ -847,7 +847,9 @@ class ObsSet(object):
             d[k] = self.get_subset(**{tag:k})
         return d
 
-    def get_next(self, **kwargs): # dummy method for LinearState compatibility
+    def get_next(self, empty=False, **kwargs): # for LinearState compatibility
+        if empty: # mark obs container as emitting nothing at this State
+            return self.get_subset(noEmission=True)
         return self
 
     def __hash__(self):
@@ -864,11 +866,14 @@ class ObsSet(object):
 
 
 class ObsSubset(object):
-    def __init__(self, obsSet, **tags):
+    def __init__(self, obsSet, noEmission=False, **tags):
         self.obsSet = obsSet
         self.tags = tags
+        self.noEmission = noEmission
 
     def get_obs(self):
+        if self.noEmission:
+            return ()
         for k,v in self.tags.items():
             try:
                 subset = subset.intersection(self.obsSet._tags[k][v])
@@ -887,7 +892,9 @@ class ObsSubset(object):
         newtags.update(tags) # allow new tags to overwrite old tags
         return self.__class__(self.obsSet, **newtags)
 
-    def get_next(self, **kwargs): # dummy method for LinearState compatibility
+    def get_next(self, empty=False, **kwargs): # for LinearState compatibility
+        if empty: # mark obs container as emitting nothing at this State
+            return self.get_subset(noEmission=True)
         return self
 
     def get_tag_dict(self, tag):
@@ -1113,8 +1120,19 @@ class LinearState(State):
 
 class VarFilterState(State):
     'filters obs according to associated variable name via tag var=name'
+    def __init__(self, name, emission, filter_f=None):
+        '''filter_f() will be used to generate obs filtering tags.
+        Must take arguments filter_f(fromNode, targetVar, obsLabel, edge, parent)'''
+        self.emission = emission
+        self.name = name
+        self.filter_f = filter_f
+
     def __call__(self, fromNode, targetVar, obsLabel, edge, parent):
-        obsLabel = obsLabel.get_subset(var=targetVar.label)
+        if self.filter_f is not None:
+            kwargs = self.filter_f(fromNode, targetVar, obsLabel, edge, parent)
+            obsLabel = obsLabel.get_subset(**kwargs)
+        else:
+            obsLabel = obsLabel.get_subset(var=targetVar.label)
         newLabel = targetVar.get_obs_label(obsLabel, parent)
         return Node(self, newLabel)
 
@@ -1348,11 +1366,12 @@ def posterior_ll(f):
     d = {}
     for node,f_ti in f.items(): # join different states indexed by obsID
         ll = node.get_ll()
-        llObs = [f_ti] # 1st entry is f_ti w/o any obs likelihood
-        for logP in ll:
-            f_ti += logP
-            llObs.append(f_ti)
-        d.setdefault(node.var.obsLabel, []).append(llObs)
+        if ll: # only process observation list if non-empty
+            llObs = [f_ti] # 1st entry is f_ti w/o any obs likelihood
+            for logP in ll:
+                f_ti += logP
+                llObs.append(f_ti)
+            d.setdefault(node.var.obsLabel, []).append(llObs)
     llDict = {}
     for obsLabel,ll in d.items():
         nobs = len(ll[0]) # actually this is #obs + 1
