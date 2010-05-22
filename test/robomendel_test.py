@@ -259,7 +259,8 @@ def merge_forward_dict(f, logP, result=None):
 
 def subgraph_pl_test(modelDict=dict(mix=mixture_model,
                                     family=family_model,
-                                    unrelated=unrelated_model)):
+                                    unrelated=unrelated_model,
+                                    environmental=environmental_model)):
     p = 1./len(modelDict) # uninformative prior
     modelWh = stats.norm(0, 1)
     modelPu = stats.norm(10, 1)

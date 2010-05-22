@@ -707,8 +707,8 @@ class SegmentGraph(object):
             for seg in segment.get_predecessors():
                 dep.update(self.analyze_deps(seg))
             segment.dep = dep
-        if segment.count_branches() > 1: # multidep exit becomes new dep
-            return frozenset((segment,))
+        if segment.count_branches() > 1 and len(segment.exitStates) > 1:
+            return frozenset((segment,)) # multidep exit becomes new dep
         else: # just echo its dependencies forward
             return segment.dep
         
