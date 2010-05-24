@@ -219,7 +219,8 @@ def unrelated_model2(modelWh, modelPu):
     dg = model.DependencyGraph({'START':{moms:{}, dads:{}, kids:{}},
                                 'mom':{'STOP':term},
                                 'dad':{'STOP':term},
-                                'child':{'STOP':term}})
+                                'child':{'STOP':term}},
+                               joinTags=('matingID',))
     return dg
 
 def environmental_model(modelWh, modelPu):
@@ -263,7 +264,8 @@ def environmental_model2(modelWh, modelPu):
                                 'dad':{'ext':extSG},
                                 ('mom', 'dad'):{'child':sct},
                                 'child':{'ext':extSG},
-                                'ext':{'STOP':term}})
+                                'ext':{'STOP':term}},
+                               joinTags=('matingID',))
     return dg
 
 
@@ -298,7 +300,8 @@ def mixture_model2(modelWh, modelPu):
     dads = model.BranchGenerator('dad', prior, iterTag='matingID')
     dg = model.DependencyGraph({'START':{moms:{}, dads:{}},
                                 ('mom', 'dad'):{'child':sct},
-                                'child':{'STOP':term}})
+                                'child':{'STOP':term}},
+                               joinTags=('matingID',))
     return dg
 
 
@@ -393,7 +396,8 @@ def robomendel_cross_obs(n1=10, n2=10, n=1):
     return obsSet
 
 
-def pair_test(models=(mixture_model2, family_model2, unrelated_model2)):
+def pair_test(models=(mixture_model2, family_model2, unrelated_model2,
+                      environmental_model2)):
     obsSet = get_family_obs(matingID=0)
     obsSet2 = get_family_obs(matingID=1)
     obsSet += obsSet2

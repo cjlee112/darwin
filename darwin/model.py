@@ -327,7 +327,8 @@ class DependencyGraph(object):
                     results[newVar] = edge
                     ## print 'added', newlabel, 'to results:', len(results)
             else:
-                results[self.get_var(label, seg=node.var.seg)] = edge
+                results[self.get_var(label, obsLabel=node.var.obsLabel,
+                                     seg=node.var.seg)] = edge
         # next, process multicond edges
         try: # this variable already part of an existing multicond?
             mcResults = self.multiCondVar[node.var] # use pre-compiled multiconds
