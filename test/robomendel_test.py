@@ -317,9 +317,10 @@ def pl1_test(model_f=family_model, obsSet=None):
         obsSet = get_family_obs()
     dg = model_f(modelWh, modelPu)
     m = model.Model(dg, obsSet)
-    m.segmentGraph.p_forward(m.logPobsDict)
+    logP = m.segmentGraph.p_forward(m.logPobsDict)
     llDict = basic_pl(m.segmentGraph)
     print_pl(llDict)
+    return logP
     
     
 def merge_forward_dict(f, logP, result=None):
@@ -330,14 +331,18 @@ def merge_forward_dict(f, logP, result=None):
         result[k] = v + logP
     return result
 
+
 def subgraph_pl_test(modelDict=dict(mix=mixture_model,
                                     family=family_model,
                                     unrelated=unrelated_model,
-                                    environmental=environmental_model)):
+                                    environmental=environmental_model),
+                     obsSet=None):
+    'build multi-model hypergraph, apply to the obs, and print posterior liklihoods'
     p = 1./len(modelDict) # uninformative prior
     modelWh = stats.norm(0, 1)
     modelPu = stats.norm(10, 1)
-    obsSet = get_family_obs()
+    if obsSet is None:
+        obsSet = get_family_obs()
     stop = model.StopState(useObsLabel=False)
     d = {}
     d2 = {}
@@ -363,20 +368,18 @@ def subgraph_pl_test(modelDict=dict(mix=mixture_model,
             merge_forward_dict(subgraph.fprob[subgraph.start].f, logP, fmerge)
     llDict = model.posterior_ll(fmerge)
     print_pl(llDict)
+
    
-def robomendel_cross_obs(modelDict=dict(mix=mixture_model,
-                                    family=family_model,
-                                    unrelated=unrelated_model,
-                                    environmental=environmental_model)):
+def robomendel_cross_obs(n1=10, n2=10, n=1):
+    'construct n1 Pu x Pu crosses, and n2 Hy x Hy cross; n obs per plant'
     from darwin.robomendel import PeaPlant
     purple_plant = PeaPlant(genome=PeaPlant.purple_genome)
     white_plant = PeaPlant(genome=PeaPlant.white_genome)
     hybrid_plant = purple_plant * white_plant
 
-    n = 1
     obsSet = model.ObsSet('mating obs')
-    parents = [(purple_plant, purple_plant)]*10 #, (purple_plant, white_plant)]
-    parents.extend([(hybrid_plant, hybrid_plant)]*10)
+    parents = [(purple_plant, purple_plant)] * n1 #, (purple_plant, white_plant)]
+    parents.extend([(hybrid_plant, hybrid_plant)] * n2)
     for i in range(len(parents)):
         (parent_1, parent_2) = parents[i]
         child = parent_1 * parent_2
@@ -387,8 +390,18 @@ def robomendel_cross_obs(modelDict=dict(mix=mixture_model,
     #obsSet.add_obs(purple_plant.rvs(n), var='mom', matingID=i)
     #obsSet.add_obs(purple_plant.rvs(n), var='dad', matingID=i)
     #obsSet.add_obs(white_plant.rvs(n), var='child', matingID=i)
+    return obsSet
 
 
-
+def pair_test(models=(mixture_model2, family_model2, unrelated_model2)):
+    obsSet = get_family_obs(matingID=0)
+    obsSet2 = get_family_obs(matingID=1)
+    obsSet += obsSet2
+    for m in models:
+        logP = pl1_test(m, obsSet) # combined obs
+        logP2 = pl1_test(m, obsSet2) # half the obs
+        if abs(logP - 2. * logP2) > 0.02:
+            raise AssertionError('bad logP: %1.3f vs %1.3f' %(logP, 2. * logP2))
+        
 
 
