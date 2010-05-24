@@ -170,10 +170,22 @@ def get_2family_obs(modelWh, modelPu):
     obsSet.add_obs(modelPu.rvs(1),var='child', matingID=1)
 
 def family_model(modelWh, modelPu):
+    'standard mom x dad --> child model'
     pstate, wstate, prior, stop, term, sct = multicond_setup(modelWh, modelPu)
     dg = model.DependencyGraph({'START':{'mom':prior, 'dad':prior},
                                 ('mom', 'dad'):{'child':sct},
                                 'child':{'STOP':term}})
+    return dg
+
+def family_model2(modelWh, modelPu):
+    'standard mom x dad --> child model, supports multiple matingID'
+    pstate, wstate, prior, stop, term, sct = multicond_setup(modelWh, modelPu)
+    moms = model.BranchGenerator('mom', prior, iterTag='matingID')
+    dads = model.BranchGenerator('dad', prior, iterTag='matingID')
+    dg = model.DependencyGraph({'START':{moms:{}, dads:{}},
+                                ('mom', 'dad'):{'child':sct},
+                                'child':{'STOP':term}},
+                               joinTags=('matingID',))
     return dg
 
 def unrelated_model(modelWh, modelPu):
@@ -187,6 +199,24 @@ def unrelated_model(modelWh, modelPu):
 
     dg = model.DependencyGraph({'START':{'mom':prior, 'dad':prior,
                                          'child':prior},
+                                'mom':{'STOP':term},
+                                'dad':{'STOP':term},
+                                'child':{'STOP':term}})
+    return dg
+
+def unrelated_model2(modelWh, modelPu):
+    'model mom, dad, child as independent, supports multiple matingID'
+    pstate = model.VarFilterState('Pu', modelPu)
+    wstate = model.VarFilterState('Wh', modelWh)
+    prior = model.StateGraph({'START':{pstate:0.9, wstate:0.1}})
+    stop = model.StopState(useObsLabel=False)
+    term = model.StateGraph({pstate:{stop:1.}, wstate:{stop:1.},
+                             robomendel.noneState:{stop:1.}})
+
+    moms = model.BranchGenerator('mom', prior, iterTag='matingID')
+    dads = model.BranchGenerator('dad', prior, iterTag='matingID')
+    kids = model.BranchGenerator('child', prior, iterTag='matingID')
+    dg = model.DependencyGraph({'START':{moms:{}, dads:{}, kids:{}},
                                 'mom':{'STOP':term},
                                 'dad':{'STOP':term},
                                 'child':{'STOP':term}})
@@ -213,6 +243,29 @@ def environmental_model(modelWh, modelPu):
                                 'ext':{'STOP':term}})
     return dg
 
+def environmental_model2(modelWh, modelPu):
+    'model wh / pu as random extrinsic variable, supports multiple matingID'
+    def filter_from_node(fromNode, *args):
+        return dict(var=fromNode.var.label)
+    pstate = model.VarFilterState('Pu', modelPu, filter_f=filter_from_node)
+    wstate = model.VarFilterState('Wh', modelWh, filter_f=filter_from_node)
+    peaSpecies = model.SilentState('pea')
+    prior = model.StateGraph({'START':{peaSpecies:1.}})
+    extSG = model.StateGraph({peaSpecies:{pstate:0.9, wstate:0.1}})
+    stop = model.StopState(useObsLabel=False)
+    term = model.StateGraph({pstate:{stop:1.}, wstate:{stop:1.}})
+    sct = robomendel.SpeciesCrossTransition()
+
+    moms = model.BranchGenerator('mom', prior, iterTag='matingID')
+    dads = model.BranchGenerator('dad', prior, iterTag='matingID')
+    dg = model.DependencyGraph({'START':{moms:{}, dads:{}},
+                                'mom':{'ext':extSG},
+                                'dad':{'ext':extSG},
+                                ('mom', 'dad'):{'child':sct},
+                                'child':{'ext':extSG},
+                                'ext':{'STOP':term}})
+    return dg
+
 
 
 def mixture_model(modelWh, modelPu):
@@ -231,6 +284,24 @@ def mixture_model(modelWh, modelPu):
     return dg
 
 
+def mixture_model2(modelWh, modelPu):
+    'model process as single species, with mixture emission, supports multiple matingID'
+    mixModel = get_mix_model(modelWh, modelPu)
+    peaSpecies = model.VarFilterState('pea', mixModel)
+    prior = model.StateGraph({'START':{peaSpecies:1.0}})
+    stop = model.StopState(useObsLabel=False)
+    term = model.StateGraph({peaSpecies:{stop:1.}, 
+                             robomendel.noneState:{stop:1.}})
+    sct = robomendel.SpeciesCrossTransition()
+
+    moms = model.BranchGenerator('mom', prior, iterTag='matingID')
+    dads = model.BranchGenerator('dad', prior, iterTag='matingID')
+    dg = model.DependencyGraph({'START':{moms:{}, dads:{}},
+                                ('mom', 'dad'):{'child':sct},
+                                'child':{'STOP':term}})
+    return dg
+
+
 def basic_pl(segmentGraph):
     f = segmentGraph.fprob[segmentGraph.start].f # forward prob dictionary
     return model.posterior_ll(f)
@@ -239,10 +310,11 @@ def print_pl(llDict):
     for obsLabel, ll in llDict.items():
         print '%s\t%s' % (str(obsLabel), ','.join([('%1.2f' % x) for x in ll]))
 
-def pl1_test(model_f=family_model):
+def pl1_test(model_f=family_model, obsSet=None):
     modelWh = stats.norm(0, 1)
     modelPu = stats.norm(10, 1)
-    obsSet = get_family_obs()
+    if obsSet is None:
+        obsSet = get_family_obs()
     dg = model_f(modelWh, modelPu)
     m = model.Model(dg, obsSet)
     m.segmentGraph.p_forward(m.logPobsDict)
