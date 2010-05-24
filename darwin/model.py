@@ -853,6 +853,18 @@ class ObsSet(object):
             return self.get_subset(noEmission=True)
         return self
 
+    def __iadd__(self, other):
+        'add obs from container other to this container'
+        n = len(self._obs)
+        self._obs.extend(other._obs) # append other obs after self obs
+        for k, d in other._tags.items():
+            target = self._tags.setdefault(k, {})
+            for v, obs in d.items():
+                s = target.setdefault(v, set())
+                for iobs in obs:
+                    s.add(iobs + n) # apply offset to start of other obs
+        return self # required for __iadd__ !
+
     def __hash__(self):
         return hash(self.name)
 
