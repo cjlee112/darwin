@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from darwin import mendel
 from darwin import model
 from darwin import mixture
@@ -289,4 +290,60 @@ def subgraph_pl_test(modelDict=dict(mix=mixture_model,
             merge_forward_dict(subgraph.fprob[subgraph.start].f, logP, fmerge)
     llDict = model.posterior_ll(fmerge)
     print_pl(llDict)
-    
+   
+def robomendel_cross_test(modelDict=dict(mix=mixture_model,
+                                    family=family_model,
+                                    unrelated=unrelated_model)):
+    from darwin.robomendel import PeaPlant
+    purple_plant = PeaPlant(genome=PeaPlant.purple_genome)
+    white_plant = PeaPlant(genome=PeaPlant.white_genome)
+    hybrid_plant = purple_plant * white_plant
+
+    n = 1
+    obsSet = model.ObsSet('mating obs')
+    parents = [(purple_plant, purple_plant)]*10 #, (purple_plant, white_plant)]
+    parents.extend([(hybrid_plant, hybrid_plant)]*10)
+    for i in range(len(parents)):
+        (parent_1, parent_2) = parents[i]
+        child = parent_1 * parent_2
+        obsSet.add_obs(parent_1.rvs(n), var='mom', matingID=i)
+        obsSet.add_obs(parent_2.rvs(n), var='dad', matingID=i)
+        obsSet.add_obs(child.rvs(n), var='child', matingID=i)
+    #i = len(parents)
+    #obsSet.add_obs(purple_plant.rvs(n), var='mom', matingID=i)
+    #obsSet.add_obs(purple_plant.rvs(n), var='dad', matingID=i)
+    #obsSet.add_obs(white_plant.rvs(n), var='child', matingID=i)
+
+
+    p = 1./len(modelDict) # uninformative prior
+    modelWh = stats.norm(0, 1)
+    modelPu = stats.norm(10, 1)
+    stop = model.StopState(useObsLabel=False)
+    d = {}
+    d2 = {}
+    for model_name, model_f in modelDict.items(): # build distinct models
+        state = model.SilentState(model_name)
+        state.subgraph = model_f(modelWh, modelPu)
+        d[state] = p
+        d2[state] = {stop:1.}
+    prior = model.StateGraph({'START':d})
+    term = model.StateGraph(d2)
+    dg = model.DependencyGraph({'START':{'model':prior},
+                                'model':{'STOP':term}})
+    m = model.Model(dg, obsSet)
+    m.segmentGraph.p_forward(m.logPobsDict)
+    f = m.segmentGraph.fprob[m.start].f
+    fmerge = {}
+    for node, logP in f.items(): # merge forward calcs from subgraphs
+        try:
+            subgraph = node.segmentGraph
+        except AttributeError:
+            pass
+        else:
+            merge_forward_dict(subgraph.fprob[subgraph.start].f, logP, fmerge)
+    llDict = model.posterior_ll(fmerge)
+    print_pl(llDict)
+
+
+
+

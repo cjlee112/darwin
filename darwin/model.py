@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import UserDict
 from math import *
 import random
@@ -1366,7 +1367,7 @@ def posterior_ll(f):
     d = {}
     for node,f_ti in f.items(): # join different states indexed by obsID
         ll = node.get_ll()
-        if ll: # only process observation list if non-empty
+        if len(ll): # only process observation list if non-empty
             llObs = [f_ti] # 1st entry is f_ti w/o any obs likelihood
             for logP in ll:
                 f_ti += logP
