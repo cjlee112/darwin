@@ -7,6 +7,14 @@ from darwin import robomendel
 from scipy import stats
 import numpy
 import math
+import random
+from darwin.robomendel import PeaPlant
+
+purple_plant = PeaPlant(genome=PeaPlant.purple_genome)
+white_plant = PeaPlant(genome=PeaPlant.white_genome)
+hybrid_plant = purple_plant * white_plant
+
+
 
 def get_mix_model(modelWh, modelPu):
     return mixture.Mixture(((0.9, modelPu), (0.1, modelWh)))
@@ -375,11 +383,6 @@ def subgraph_pl_test(modelDict=dict(mix=mixture_model,
    
 def robomendel_cross_obs(n1=10, n2=10, n=1):
     'construct n1 Pu x Pu crosses, and n2 Hy x Hy cross; n obs per plant'
-    from darwin.robomendel import PeaPlant
-    purple_plant = PeaPlant(genome=PeaPlant.purple_genome)
-    white_plant = PeaPlant(genome=PeaPlant.white_genome)
-    hybrid_plant = purple_plant * white_plant
-
     obsSet = model.ObsSet('mating obs')
     parents = [(purple_plant, purple_plant)] * n1 #, (purple_plant, white_plant)]
     parents.extend([(hybrid_plant, hybrid_plant)] * n2)
@@ -407,5 +410,41 @@ def pair_test(models=(mixture_model2, family_model2, unrelated_model2,
         if abs(logP - 2. * logP2) > 0.02:
             raise AssertionError('bad logP: %1.3f vs %1.3f' %(logP, 2. * logP2))
         
+
+def random_cross(n=100, nobs=1):
+    obsSet = model.ObsSet('mating obs')
+    c = (purple_plant, white_plant)
+    for i in range(n):
+        mom = random.choice(c)
+        dad = random.choice(c)
+        child = mom * dad
+        obsSet.add_obs(mom.rvs(nobs), var='mom', matingID=i)
+        obsSet.add_obs(dad.rvs(nobs), var='dad', matingID=i)
+        obsSet.add_obs(child.rvs(nobs), var='child', matingID=i)
+    return obsSet
+
+
+def calc_entropy(data, m):
+    vec = entropy.sphere_entropy(data, m)
+    return numpy.average(vec.sample)
+
+
+def mutual_info_test(n=100, nobs=1, m=7):
+    obsSet = random_cross(n, nobs)
+    all = [obsSet.get_subset(matingID=i).get_obs() for i in range(n)]
+    Hall = calc_entropy(all, m)
+    moms = [obsSet.get_subset(matingID=i, var='mom').get_obs() for i in range(n)]
+    Hmoms = calc_entropy(moms, m)
+    dads = [obsSet.get_subset(matingID=i, var='dad').get_obs() for i in range(n)]
+    Hdads = calc_entropy(dads, m)
+    kids = [obsSet.get_subset(matingID=i, var='child').get_obs() for i in range(n)]
+    Hkids = calc_entropy(kids, m)
+    parents = [tuple(moms[i])+tuple(dads[i]) for i in range(n)]
+    Hparents = calc_entropy(parents, m)
+    hcond2 = Hall - Hparents
+    print Hmoms, Hdads, Hkids, Hparents, Hall, hcond2 
+    print 'Hkids, hcond2:', Hkids, hcond2
+    print 'I(child; mom, dad) = %1.3f' % (Hkids - hcond2)
+    print 'I(mom; dad) = %1.3f' % (Hmoms + Hdads - Hparents)
 
 

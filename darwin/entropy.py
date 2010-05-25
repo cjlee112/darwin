@@ -189,6 +189,49 @@ def box_entropy(vectors, m, sample=None, uninformativeDensity=None):
     return LogPVector(hvec)
 
 
+def sphere_entropy(vectors, m, sample=None):
+    '''calculate differential entropy using specified number of points m
+    vectors: sampled data points;
+    m: number of nearest points to include in each density-sampling box'''
+    # handle string data from multinomial
+    from scipy.special import gammaln
+    if not hasattr(vectors, 'ndim'):
+        a = numpy.core.array(vectors)
+    else:
+        a = vectors
+    n = len(a)
+    if n == 0: # return uninformative density
+        raise ValueError('empty data')
+    if a.ndim == 1:
+        a = a.reshape((n, 1))
+    ndim = a.shape[1]
+    rows = numpy.arange(n)
+    if sample is None:
+        sample = a
+        nsample = n
+        discount = 1
+    else:
+        if not hasattr(sample, 'ndim'):
+            sample = numpy.core.array(sample)
+        nsample = len(sample)
+        discount = 0
+    e1 = numpy.core.zeros((nsample))
+    e2 = numpy.core.zeros((nsample))
+    nm = numpy.core.zeros((nsample))
+    for i in range(nsample):
+        d = a - sample[i] # GET DIFFERENCE VECTORS
+        e = numpy.sqrt((d * d).sum(axis=1)) # r for each point
+        e.sort()
+        for m2 in xrange(m,n): # ENSURE THAT VOLUME IS NOT ZERO...
+            if e[m2]>0.: break
+        e1[i] = e[m2-1]
+        e2[i] = e[m2]
+        nm[i] = m2 - discount # don't count self! unbiased calculation
+    hvec = ndim * (numpy.log(0.5 * (e1 + e2)) + log(pi)/2.) - gammaln(ndim / 2. + 1.) \
+           - numpy.log(nm / (n - discount))
+    return LogPVector(hvec)
+
+
 ## def box_entropy(vectors,m):
 ##     d = box_density(vectors,m)
 ##     return -sum(numpy.core.log(d))/len(vectors)
