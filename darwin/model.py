@@ -363,7 +363,7 @@ class DependencyGraph(object):
                 self.multiCondVar.setdefault(node.var, {}) \
                            [multiCond.targetVar] = multiCond
                 multiCond.bind_var(node.var)
-                del self.multiCondBind[node.var.label]
+                del self.multiCondBind[node.var.label][joinTags]
             mcResults = self.multiCondVar[node.var]
         results.update(mcResults)
         self.set_var_segments(results.keys(), node.var.seg) # put in child segments
