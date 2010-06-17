@@ -347,10 +347,10 @@ def merge_forward_dict(f, logP, result=None):
     return result
 
 
-def subgraph_pl_test(modelDict=dict(mix=mixture_model,
-                                    family=family_model,
-                                    unrelated=unrelated_model,
-                                    environmental=environmental_model),
+def subgraph_pl_test(modelDict=dict(mix=mixture_model2,
+                                    family=family_model2,
+                                    unrelated=unrelated_model2,
+                                    environmental=environmental_model2),
                      obsSet=None):
     'build multi-model hypergraph, apply to the obs, and print posterior liklihoods'
     p = 1./len(modelDict) # uninformative prior
@@ -383,6 +383,7 @@ def subgraph_pl_test(modelDict=dict(mix=mixture_model,
             merge_forward_dict(subgraph.fprob[subgraph.start].f, logP, fmerge)
     llDict = model.posterior_ll(fmerge)
     print_pl(llDict)
+    return llDict
 
    
 def robomendel_cross_obs(n1=10, n2=10, n=1):
