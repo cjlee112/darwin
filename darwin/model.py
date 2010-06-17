@@ -283,6 +283,10 @@ class MultiEdgeSet(object):
         for edge in self.edges:
             yield edge.dest, edge
 
+    ## def __iter__(self):
+    ##     for edge in self.edges:
+    ##         yield edge.dest
+
 
 class DependencyGraph(object):
     labelClass = Variable
@@ -322,13 +326,11 @@ class DependencyGraph(object):
         for label,edge in d.items(): # process Markov edges
             if callable(label): # treat as function for generating target dict
                 for newlabel, edge in label(node, **edge).items():
-                    newVar = self.get_var(newlabel, obsLabel=node.var.obsLabel,
-                                          seg=node.var.seg)
+                    newVar = self.get_var(newlabel)
                     results[newVar] = edge
                     ## print 'added', newlabel, 'to results:', len(results)
             else:
-                results[self.get_var(label, obsLabel=node.var.obsLabel,
-                                     seg=node.var.seg)] = edge
+                results[self.get_var(label)] = edge
         # next, process multicond edges
         try: # this variable already part of an existing multicond?
             mcResults = self.multiCondVar[node.var] # use pre-compiled multiconds
@@ -344,12 +346,14 @@ class DependencyGraph(object):
                 except KeyError: # node.var has no multicond children
                     if len(results) > 1 or node.startNewSeg: # attach to new seg
                         self.set_var_segments(results.keys(), node.var.seg)
+                    else: # just mark var as continuing the current segment
+                        results.keys()[0].seg = node.var.seg
                     return results # so nothing further to do
                 # create a new multicond relation
                 joinTags = tuple([node.var.obsLabel.tags[tag]
                                   for tag in self.joinTags])
                 for destLabel, sg in targets.items():
-                    destVar = self.get_var(destLabel, obsLabel=node.var.obsLabel)
+                    destVar = self.get_var(destLabel)
                     multiCond = MultiCondition(sourceLabels,
                                                destVar, sg)
                     multiCond.bind_var(node.var)
@@ -372,7 +376,10 @@ class DependencyGraph(object):
     def set_var_segments(self, vars, seg):
         'put these variables in separate segments as children of seg'
         for var in vars:
-            joinTags = tuple([var.obsLabel.tags[tag] for tag in self.joinTags])
+            try:
+                joinTags = tuple([var.obsLabel.tags[tag] for tag in self.joinTags])
+            except AttributeError:
+                joinTags = ()
             var.seg = seg.get_child(var.label, joinTags)
 
     def get_start(self, **kwargs):
@@ -767,6 +774,7 @@ class ForwardDict(object):
                     logP += log_sum_list(l2)
                 l.append(logP)
             self.f[dest] = log_sum_list(l)
+            ## print '\tlogP=', self.f[dest]
         return self.f[dest]
 
     def __setitem__(self, dest, logP):
@@ -1295,8 +1303,11 @@ def compile_graph(g, gRev, node, b, logPobsDict, logPmin, parent, segmentGraph):
                         if parent is None: # backwards probability of terminal = 1
                             b[dest] = 0.
                         g[dest] = () # prevent recursion on dest
-                if logPobs <= logPmin:
-                    continue # truncate: do not recurse to dest
+                try:
+                    if logPobsDict[fromNode] <= logPmin and dest.state != 'STOP':
+                        continue # truncate: do not recurse to dest
+                except KeyError:
+                    pass
                 ## print fromNode, '--->', dest
                 segmentGraph.add_edge(fromNode, dest, edge, multiDest) # rm next 2 lines
                 gRev.setdefault(dest, {})[fromNode] = edge # save reverse graph

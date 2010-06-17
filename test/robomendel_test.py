@@ -260,10 +260,14 @@ def environmental_model2(modelWh, modelPu):
     wstate = model.VarFilterState('Wh', modelWh, filter_f=filter_from_node)
     peaSpecies = model.SilentState('pea')
     prior = model.StateGraph({'START':{peaSpecies:1.}})
-    extSG = model.StateGraph({peaSpecies:{pstate:0.9, wstate:0.1}})
+    noSpecies = model.SilentState('no-species')
+    extNone = model.VarFilterState('ext-none', model.EmissionDict({None:1.}),
+                                   filter_f=filter_from_node)
+    extSG = model.StateGraph({peaSpecies:{pstate:0.9, wstate:0.1},
+                              noSpecies:{extNone:1.}})
     stop = model.StopState(useObsLabel=False)
-    term = model.StateGraph({pstate:{stop:1.}, wstate:{stop:1.}})
-    sct = robomendel.SpeciesCrossTransition()
+    term = model.StateGraph({pstate:{stop:1.}, wstate:{stop:1.}, extNone:{stop:1.}})
+    sct = robomendel.SpeciesCrossTransition(noneState=noSpecies)
 
     moms = model.BranchGenerator('mom', prior, iterTag='matingID')
     dads = model.BranchGenerator('dad', prior, iterTag='matingID')
@@ -353,7 +357,7 @@ def subgraph_pl_test(modelDict=dict(mix=mixture_model,
     modelWh = stats.norm(0, 1)
     modelPu = stats.norm(10, 1)
     if obsSet is None:
-        obsSet = get_family_obs()
+        obsSet = get_family_obs(matingID=0)
     stop = model.StopState(useObsLabel=False)
     d = {}
     d2 = {}
@@ -405,6 +409,7 @@ def pair_test(models=(mixture_model2, family_model2, unrelated_model2,
     obsSet2 = get_family_obs(matingID=1)
     obsSet += obsSet2
     for m in models:
+        ## print 'MODEL', m
         logP = pl1_test(m, obsSet) # combined obs
         logP2 = pl1_test(m, obsSet2) # half the obs
         if abs(logP - 2. * logP2) > 0.02:
