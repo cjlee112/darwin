@@ -93,7 +93,7 @@ def mating_test(species, priors=None, **kwargs):
         print 'mating %s:\tlogP = %1.3f, %1.3f, %1.3f' % \
               tuple([str(t)] + llDict[obsLabel])
         
-def multicond_setup(modelWh, modelPu):
+def multicond_setup(modelWh, modelPu, pHybrid=0.):
     pstate = model.VarFilterState('Pu', modelPu)
     wstate = model.VarFilterState('Wh', modelWh)
     prior = model.StateGraph({'START':{pstate:0.9, wstate:0.1}})
@@ -101,7 +101,7 @@ def multicond_setup(modelWh, modelPu):
     term = model.StateGraph({pstate:{stop:1.}, wstate:{stop:1.},
                              robomendel.noneState:{stop:1.}})
 
-    sct = robomendel.SpeciesCrossTransition()
+    sct = robomendel.SpeciesCrossTransition(pHybrid=pHybrid)
     return pstate, wstate, prior, stop, term, sct
 
 def get_family_obs(mom=(0.,), dad=(1.,), child=(0.5,), **tags):
@@ -177,6 +177,15 @@ def get_2family_obs(modelWh, modelPu):
     obsSet.add_obs(modelPu.rvs(1),var='dad', matingID=1)
     obsSet.add_obs(modelPu.rvs(1),var='child', matingID=1)
 
+def get_families_obs(n, models):
+    'models must be list of tuples [(mom_model, dad_model, child_model),]'
+    obsSet = model.ObsSet('mating obs')
+    for i, t in enumerate(models):
+        for j, var in enumerate(('mom', 'dad', 'child')):
+            obsSet.add_obs(t[j].rvs(n), var=var, matingID=i)
+    return obsSet
+
+
 def family_model(modelWh, modelPu):
     'standard mom x dad --> child model'
     pstate, wstate, prior, stop, term, sct = multicond_setup(modelWh, modelPu)
@@ -185,9 +194,9 @@ def family_model(modelWh, modelPu):
                                 'child':{'STOP':term}})
     return dg
 
-def family_model2(modelWh, modelPu):
+def family_model2(modelWh, modelPu, pHybrid=0.):
     'standard mom x dad --> child model, supports multiple matingID'
-    pstate, wstate, prior, stop, term, sct = multicond_setup(modelWh, modelPu)
+    pstate, wstate, prior, stop, term, sct = multicond_setup(modelWh, modelPu, pHybrid)
     moms = model.BranchGenerator('mom', prior, iterTag='matingID')
     dads = model.BranchGenerator('dad', prior, iterTag='matingID')
     dg = model.DependencyGraph({'START':{moms:{}, dads:{}},
@@ -325,15 +334,20 @@ def print_pl(llDict):
     for obsLabel, ll in llDict.items():
         print '%s\t%s' % (str(obsLabel), ','.join([('%1.2f' % x) for x in ll]))
 
-def pl1_test(model_f=family_model, obsSet=None):
+
+def pl_for_model(model_f, obsSet):
     modelWh = stats.norm(0, 1)
     modelPu = stats.norm(10, 1)
-    if obsSet is None:
-        obsSet = get_family_obs()
     dg = model_f(modelWh, modelPu)
     m = model.Model(dg, obsSet)
     logP = m.segmentGraph.p_forward(m.logPobsDict)
     llDict = basic_pl(m.segmentGraph)
+    return llDict, logP
+
+def pl1_test(model_f=family_model, obsSet=None):
+    if obsSet is None:
+        obsSet = get_family_obs()
+    llDict, logP = pl_for_model(model_f, obsSet)
     print_pl(llDict)
     return logP
     
@@ -415,7 +429,24 @@ def pair_test(models=(mixture_model2, family_model2, unrelated_model2,
         logP2 = pl1_test(m, obsSet2) # half the obs
         if abs(logP - 2. * logP2) > 0.02:
             raise AssertionError('bad logP: %1.3f vs %1.3f' %(logP, 2. * logP2))
+
+def hybrid_test(pHybrid=0.01):
+    'test Wh x Pu outcome on family_model2 with specified pHybrid value'
+    modelWh = stats.norm(0, 1)
+    modelPu = stats.norm(10, 1)
+    obsSet = get_families_obs(1, ((modelWh, modelPu, modelPu),))
+    def my_family_model(modelWh, modelPu):
+        return family_model2(modelWh, modelPu, pHybrid)
+    logP = pl1_test(my_family_model, obsSet)
+    obs = obsSet.get_subset(matingID=0).get_obs()
+    assert abs(logP - math.log(.1 * .9 * pHybrid * modelWh.pdf(obs[0])
+                               * modelPu.pdf(obs[1]) * modelPu.pdf(obs[2]))) <= 0.02
         
+def multi_hybrid_test(hybridVals=(0.1, 0.01, 0.001)):
+    'test multiple pHybrid values to ensure PL has correct sensitivity to pHybrid'
+    for pHybrid in hybridVals:
+        hybrid_test(pHybrid)
+
 
 def random_cross(n=100, nobs=1):
     obsSet = model.ObsSet('mating obs')
