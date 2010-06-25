@@ -862,6 +862,36 @@ class ObsSet(object):
             return self.get_subset(noEmission=True)
         return self
 
+    def get_sorted_tag(self, iterTag):
+        '''get sorted list of tag values for iterTag
+        with dict of associated obs subsets'''
+        d = self.get_tag_dict(iterTag)
+        tags = d.keys()
+        tags.sort() # ensure consistent order with He vector
+        return tags, d
+
+    def get_ll_list(self, llDict, iterTag, sumTag=None, adjust=0.):
+        '''get list of total PL for each possible tag value of iterTag,
+        in each case summed over all possible values of sumTag, if not None'''
+        ll = []
+        tags, d = self.get_sorted_tag(iterTag)
+        for tag in tags:
+            subset = d[tag]
+            if sumTag is not None:
+                keys = subset.get_tag_dict(sumTag).values()
+            else:
+                keys = (subset,)
+            ll.append(sum([sum(llDict[obs]) for obs in keys]) + adjust)
+        return ll
+
+    def get_obstuple_list(self, iterTag):
+        'return list of obs vectors for distinct values of iterTag'
+        l = []
+        tags, d = self.get_sorted_tag(iterTag)
+        for tag in tags:
+            l.append(d[tag].get_obs())
+        return l
+
     def __iadd__(self, other):
         'add obs from container other to this container'
         n = len(self._obs)
@@ -901,7 +931,9 @@ class ObsSubset(object):
                 subset = subset.intersection(self.obsSet._tags[k][v])
             except NameError:
                 subset = self.obsSet._tags[k][v]
-        for iobs in subset:
+        obs = list(subset)
+        obs.sort() # ensure consistent order of enumeration
+        for iobs in obs:
             try:
                 results = numpy.concatenate((results, self.obsSet._obs[iobs]))
             except NameError:

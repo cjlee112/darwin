@@ -176,6 +176,7 @@ def get_2family_obs(modelWh, modelPu):
     obsSet.add_obs(modelPu.rvs(1),var='mom', matingID=1)
     obsSet.add_obs(modelPu.rvs(1),var='dad', matingID=1)
     obsSet.add_obs(modelPu.rvs(1),var='child', matingID=1)
+    return obsSet
 
 def get_families_obs(n, models):
     'models must be list of tuples [(mom_model, dad_model, child_model),]'

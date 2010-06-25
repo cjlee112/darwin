@@ -95,6 +95,8 @@ class SampleEstimator(object):
 
 class LogPVector(object):
     def __init__(self, sample):
+        if not isinstance(sample, numpy.ndarray):
+            sample = numpy.array(sample)
         self.sample = sample
     def __neg__(self):
         return LogPVector(-self.sample)
