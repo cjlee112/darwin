@@ -55,34 +55,34 @@ def calc_density(vectors,dx):
 
 
 class SampleEstimator(object):
-    def __init__(self, sample=None, mean=None, variance=None):
-        if variance is not None: # store values supplied by user
-            self.mean = mean
-            self.variance = variance
-            return
-        self.mean = numpy.average(sample)
-        diffs = sample - self.mean
-        self.variance = numpy.average(diffs * diffs) / len(sample)
+    def __init__(self, sample):
+        if not isinstance(sample, numpy.ndarray):
+            sample = numpy.array(sample)
+        self.sample = sample
+        self.calc_stats()
+
+    def calc_stats(self):
+        self.mean = numpy.average(self.sample)
+        diffs = self.sample - self.mean
+        self.variance = numpy.average(diffs * diffs) / len(self.sample)
 
     def __neg__(self):
-        return self.__class__(mean= -self.mean, variance=self.variance)
+        return self.__class__(-self.sample)
 
     def __sub__(self, other):
-        return self.__class__(mean= self.mean - other.mean,
-                              variance=self.variance + other.variance)
+        return self.__class__(self.sample - other.sample)
 
     def __add__(self, other):
-        return self.__class__(mean= self.mean + other.mean,
-                              variance=self.variance + other.variance)
+        return self.__class__(self.sample + other.sample)
 
     def __isub__(self, other):
-        self.mean -= other.mean
-        self.variance += other.variance
+        self.sample -= other.sample
+        self.calc_stats()
         return self
 
     def __iadd__(self, other):
-        self.mean += other.mean
-        self.variance += other.variance
+        self.sample += other.sample
+        self.calc_stats()
         return self
     
     def get_bound(self, p=0.05):
@@ -93,15 +93,6 @@ class SampleEstimator(object):
         else:
             return self.mean + sqrt(0.5 * self.variance / (1. - p))
 
-class LogPVector(object):
-    def __init__(self, sample):
-        if not isinstance(sample, numpy.ndarray):
-            sample = numpy.array(sample)
-        self.sample = sample
-    def __neg__(self):
-        return LogPVector(-self.sample)
-    def __sub__(self, other):
-        return SampleEstimator(self.sample -  other.sample)
 
 def He_discrete(vectors, sample=None):
     '''Compute empirical entropy for discrete observations.
@@ -130,7 +121,7 @@ def He_discrete(vectors, sample=None):
                 total += 1.
     for obs, n in counts.items(): # transform to -logP
         counts[obs] = log(total / n)
-    return LogPVector(numpy.core.array([counts[obs] for obs in sample]))
+    return SampleEstimator(numpy.core.array([counts[obs] for obs in sample]))
 
 def discrete_box_entropy(vectors, m):
     # Check for observations as strings for the multinomial.
@@ -142,7 +133,7 @@ def discrete_box_entropy(vectors, m):
                 mapping[v] = count
                 count += 1
         if count == 1: # single value = zero entropy
-            return LogPVector(numpy.core.array([0.]*len(vectors)))
+            return SampleEstimator(numpy.core.array([0.]*len(vectors)))
         vectors = [mapping[v] for v in vectors]
     return box_entropy(vectors, m)
 
@@ -157,7 +148,7 @@ def box_entropy(vectors, m, sample=None, uninformativeDensity=None):
         a = vectors
     n = len(a)
     if n == 0: # return uninformative density
-        return LogPVector(numpy.core.array([-log(uninformativeDensity)]
+        return SampleEstimator(numpy.core.array([-log(uninformativeDensity)]
                                            * len(sample)))
     if a.ndim == 1:
         a = a.reshape((n, 1))
@@ -188,7 +179,7 @@ def box_entropy(vectors, m, sample=None, uninformativeDensity=None):
            - numpy.log(nm/(n - discount))
     if uninformativeDensity is not None: # enforce upper bound on hvec
         numpy.clip(hvec, neginf, -log(uninformativeDensity), out=hvec)
-    return LogPVector(hvec)
+    return SampleEstimator(hvec)
 
 
 def sphere_entropy(vectors, m, sample=None):
@@ -231,7 +222,7 @@ def sphere_entropy(vectors, m, sample=None):
         nm[i] = m2 - discount # don't count self! unbiased calculation
     hvec = ndim * (numpy.log(0.5 * (e1 + e2)) + log(pi)/2.) - gammaln(ndim / 2. + 1.) \
            - numpy.log(nm / (n - discount))
-    return LogPVector(hvec)
+    return SampleEstimator(hvec)
 
 
 ## def box_entropy(vectors,m):
@@ -251,7 +242,7 @@ sample box is of course centered on a data point...
 
 def discrete_sample_Le(vectors, model):
     logP = numpy.log(model.pmf(vectors))
-    return LogPVector(logP)
+    return SampleEstimator(logP)
 
 def sample_Le(vectors, model):
     '''calculate average log-likelihood and bound by LoLN.
@@ -259,7 +250,7 @@ def sample_Le(vectors, model):
     model: likelihood model with pdf() method'''
     # Detect discrete vs. continuous models.
     logP = numpy.log(model.pdf(vectors))
-    return LogPVector(logP)
+    return SampleEstimator(logP)
 
 
 def d2_density(v, m):
@@ -306,7 +297,7 @@ def d2_entropy(v, m, use_d2=True):
         dvec = d2_density(v, m)
     else:
         dvec = d_density(v, m)
-    return LogPVector( - numpy.log(dvec))
+    return SampleEstimator( - numpy.log(dvec))
 
 def d1_intervals(points, start, stop, m):
     '''generate integration intervals [(start, f, c)] for d1-based density
@@ -567,6 +558,6 @@ def cond_entropy(vectors, m, nsample=50):
         l = xdata.searchsorted(target[i][1] - xradius) # total w/in xradius
         r = xdata.searchsorted(target[i][1] + xradius, side='right')
         dvec[i] = m2 / ((r - l - 1) * 2. * yradius)
-    return LogPVector( - numpy.log(dvec))
+    return SampleEstimator( - numpy.log(dvec))
 
     

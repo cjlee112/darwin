@@ -47,7 +47,7 @@ def pheno1_test(modelWh, modelPu):
 
     for plant in range(20):
         obsLabel = obsSet.get_subset(plantID=plant)
-        Le = entropy.LogPVector(numpy.array(llDict[obsLabel]))
+        Le = entropy.SampleEstimator(numpy.array(llDict[obsLabel]))
         LeMix = entropy.sample_Le(obsLabel.get_obs(), mixModel)
         Ie = Le - LeMix
         He = entropy.box_entropy(obsLabel.get_obs(), 7)

@@ -45,7 +45,7 @@ def multinomial_app():
         l_e = discrete_sample_Le(outcomes, model)
         ## log of uninformitive prior
         k = 3
-        lup = LogPVector(numpy.array([math.log(1./k)]*n))
+        lup = SampleEstimator(numpy.array([math.log(1./k)]*n))
         i_m = l_e - lup
         im_points.append((d, i_m.mean))
 
@@ -101,7 +101,7 @@ if __name__ == '__main__':
         #l_e = discrete_sample_Le(outcomes, model)
         ### log of uninformitive prior
         #k = 3
-        #lup = LogPVector(numpy.array([math.log(1./k)]*n))
+        #lup = SampleEstimator(numpy.array([math.log(1./k)]*n))
         #i_m = l_e - lup
         #im_points.append((d, i_m.mean))
 
