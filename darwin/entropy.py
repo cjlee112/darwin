@@ -62,9 +62,9 @@ class SampleEstimator(object):
         self.calc_stats()
 
     def calc_stats(self):
-        self.mean = numpy.average(self.sample)
+        self.mean = numpy.mean(self.sample)
         diffs = self.sample - self.mean
-        self.variance = numpy.average(diffs * diffs) / len(self.sample)
+        self.variance = numpy.mean(diffs * diffs) / len(self.sample)
 
     def __neg__(self):
         return self.__class__(-self.sample)
@@ -358,7 +358,7 @@ class Density_d1(object):
     >>> data2 = m.rvs(100)
     >>> dens = entropy.Density_d1(data, -10, 10, 13)
     >>> d2 = dens.pdf(data2)
-    >>> -numpy.average(numpy.log(d2))
+    >>> -numpy.mean(numpy.log(d2))
     1.4896956026040085
     '''
     def __init__(self, points, start, stop, m):
