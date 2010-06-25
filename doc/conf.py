@@ -176,6 +176,8 @@ jsmath_path = 'jsMath/easy/load.js'
 latex_documents = [
   ('index', 'Darwin.tex', u'Darwin Documentation',
    u'Christopher Lee, Marc Harper', 'manual'),
+  ('tutorials/ip1', 'Ip1_tutorial.tex', u'Potential Information Tutorial',
+   u'Christopher Lee, Marc Harper', 'howto'),
 ]
 
 # The name of an image file (relative to this directory) to place at the top of
