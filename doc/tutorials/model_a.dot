@@ -1,0 +1,7 @@
+digraph ModelA {
+  mom [label="Mom"];
+  dad [label="Dad"];
+  child [label="Child"];
+  mom -> child;
+  dad -> child;
+}

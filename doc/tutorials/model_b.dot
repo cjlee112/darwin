@@ -1,0 +1,13 @@
+digraph ModelB {
+  mom [label="Mom", shape=box];
+  dad [label="Dad", shape=box];
+  child [label="Child", shape=box];
+  mom_ext [label="trait"];
+  dad_ext [label="trait"];
+  child_ext [label="trait"];
+  mom -> mom_ext;
+  mom -> child;
+  dad -> dad_ext;
+  dad -> child;
+  child -> child_ext;
+}
