@@ -423,7 +423,7 @@ multi-dimensional (i.e. each experimental observation consists of
 entropy :math:`H_e`, by extracting the experimental observations
 as a list of tuples (one tuple for each ``matingID`` value)::
 
-   >>> obsvec = obsSet.get_obstuple_list('matingID')
+   >>> obsvec = obsWW.get_obstuple_list('matingID')
    >>> obsvec[0]
    array([ 0.06450444, -1.9897732 ,  1.24941216])
 
@@ -448,15 +448,16 @@ convenience method.  We just tell it we want a separate value for
 each value of the ``matingID`` tag, summed over all values of the
 ``var`` tag (i.e. "mom", "dad", "child")::
 
-   >>> ll = obsSet.get_ll_list(llDict, iterTag='matingID', sumTag='var', 
-                               -math.log(0.1 * 0.1))
+   >>> ll = obsWW.get_ll_list(llDict, iterTag='matingID', sumTag='var', 
+                              -math.log(0.1 * 0.1))
 
 The last factor is an adjustment we need to apply to reflect the fact
 that rather than sampling our parent plants from the distribution
 specified in the model (10% *Wh*, 90% *Pu*), we actually sampled
 *Wh* plants with 100% probability for both parents (i.e. this is
-a :math:`Wh \times Wh` experiment, after all!).  We can check 
-the value of our results::
+a :math:`Wh \times Wh` experiment, after all!).  
+
+We can check the value of our results::
 
    >>> Le = entropy.SampleEstimator(ll)
    >>> Le.mean /3
@@ -482,5 +483,71 @@ observations, the ``He`` and ``Le`` input data must follow the
 (specifically, they are sorted by ``matingID``).
 
 
+Analyzing the Wh x Pu Experiment
+++++++++++++++++++++++++++++++++
 
+Let's perform the same analysis for the :math:`Wh \times Pu` experiment.
+First, we need to make a small adjustment to the ``family_model2``
+model to make it conform to our model A.  Specifically, we need
+to assert the probability of hybridization (successfully obtaining
+progeny from a cross of two different species) to be
+``pHybrid=0.002`` as specified in Model A (see table above).
+We can do this without modifying our code above 
+by creating a "wrapper function" that
+passes this parameter to ``family_model2()``::
+
+   >>> def my_family_model(modelWh, modelPu):
+           return robomendel_test.family_model2(modelWh, modelPu, pHybrid=0.002)
+
+Now we can compute the observation log-likelihoods, and examine
+some values::
+
+   >>> llDict = model_ll(my_family_model, obsWP)
+   >>> [llDict[obsWP.get_subset(matingID=i, var='child')] for i in range(10)]
+   [[-7.3729821068779584], [-7.387455860667675], [-7.464356101362366],
+    [-9.8232047841673982], [-7.5045447464760873], [-8.4225208671526808],
+    [-7.2002822302674989], [-7.5340847444872754], [-8.4048201434469796],
+    [-7.1575274607305825]]
+
+We can compute the average log-likelihood expected from theory.
+First we need to calculate the ``pHybrid`` factor::
+
+   >>> math.log(0.002)
+   -6.2146080984221914
+
+yielding a total expected value of -1.42 - 6.21 =  -7.63.
+Note that the computed log-likelihoods seem to match this well.
+
+Now let's compute potential information as before::
+
+   >>> obsvec = obsWP.get_obstuple_list('matingID')
+   >>> He = entropy.box_entropy(obsvec, 7)
+   >>> He.mean / 3
+   1.4104276753494582
+   >>> ll = obsWP.get_ll_list(llDict, iterTag='matingID', sumTag='var', 
+                              -math.log(0.1 * 0.9))
+   >>> Le = entropy.SampleEstimator(ll)
+   >>> Ip = -He - Le
+   >>> Ip.mean
+   6.2704755526763991
+   >>> Ip.get_bound()
+   6.0876746600673561
+
+Note that the mean potential information matches almost exactly
+the ``pHybrid=0.002`` factor (i.e. -6.21, see above).  Concretely,
+what the potential information is telling us is that whereas our
+model predicted we'd get progeny only 0.2% of the time, experimentally
+we're getting progeny 100% of the time.  Note also that the empirical
+entropy estimate is basically unchanged vs. the :math:`Wh \times Wh` 
+experiment.  What's changed is just the observation log-likelihood,
+specifically for the child.
+
+We can also convert these potential information estimates to bits::
+
+   >>> Ip.mean / math.log(2)
+   9.0463839838617233
+   >>> Ip.get_bound() / math.log(2)
+   8.7826580426245808
+
+As you can see, this matches what's shown in fig. 3d of the paper.
 
