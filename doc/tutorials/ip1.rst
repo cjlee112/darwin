@@ -438,8 +438,25 @@ distribution :math:`p(mom, dad, child)`::
    >>> He.mean / 3
    1.3604437401885947
 
-This empirical estimate is almost exactly the same as the true theoretical
+This empirical estimate is close to the true theoretical
 value based on the ``modelWh`` flower color distribution: 1.42 per plant.
+The ``box_entropy()`` function implements the following estimator
+for points :math:`\vec X_j` in a *d*-dimensional space:
+
+.. math:: \overline{H_e} = -\frac{1}{N}\sum_{j=1}^N{\log{\frac{m-1}
+   {(N-1)(r_{j:m} + r_{j:m-1})^d}}}
+
+where we use the notation :math:`r_{j:m}=max_{i=1}^{i=d}(|X_{j:m,i}-X_{j,i}|)`
+to indicate the radius (half side-length)
+of the smallest *d*-dimensional hypercube
+centered at point :math:`\vec X_j` that will contain its *m*-th nearest
+neighbor;
+:math:`X_{j,i}` means coordinate *i* of point :math:`\vec X_j`; and
+:math:`X_{j:m,i}` means coordinate *i* of the *m*-th nearest
+neighbor of point :math:`\vec X_j`.
+It must be emphasized that
+many more sophisticated estimators are also possible.
+
 
 Finally, we need to package the posterior log-likelihood computed from
 the model in the same form as our empirical entropy, i.e. one value
@@ -481,6 +498,50 @@ observations, the ``He`` and ``Le`` input data must follow the
 *exact* same observation order.  The ``get_obstuple_list()`` and
 ``get_ll_list()`` methods ensure that they indeed do so
 (specifically, they are sorted by ``matingID``).
+
+Testing the "Environmental Factor" Model
+++++++++++++++++++++++++++++++++++++++++
+
+We can compute the potential information for this experiment on another
+model by simply calculating its empirical log-likelihood.  Let's do so
+for model B, which explains the appearance of white vs. purple flowered
+plants as a non-heritable, extrinsic factor (see figure above).
+Again, we can obtain this model from the robomendel_test module::
+
+   >>> llDict = model_ll(robomendel_test.environmental_model2, obsWW)
+   >>> [llDict[obsWW.get_subset(matingID=i, var='child')] for i in range(10)]
+   [[-4.0030394931622224], [-3.2559275654981112], [-3.8326912745477988],
+   [-3.773337810429763], [-3.5048219130392733], [-3.3898316326139248],
+   [-3.8449691998989071], [-3.2258765548621278], [-4.1296473467616694],
+   [-3.3422065913509984]]
+
+The *child* likelihood is lower than for the family model.  Why?  
+In model A, once the parents are identified as *Wh* by the observational
+data, the model predicts that the child should also be *Wh* with 
+100% probability.  However, in model B the child's flower color is
+completely independent of the parents', and just follows the population
+mix (i.e. a 10% chance of having white flowers).  So its expected
+log-likelihood is -2.30 - 1.42 = -3.72, which fits the data above.
+On this basis we expect non-zero potential information for model B,
+which we can easily verify by calculating it::
+
+   >>> ll = obsWW.get_ll_list(llDict, iterTag='matingID', sumTag='var', 
+                              -math.log(0.1 * 0.1))
+   >>> Le = entropy.SampleEstimator(ll)
+   >>> Ip = -He - Le
+   >>> Ip.mean
+   2.3487313802212864
+   >>> Ip.get_bound()
+   2.2078391279385174
+
+Note that this potential information simply reflects the difference
+between the model's prediction that the probability of white-flowered
+children is 10%, versus the observation in this experiment that it is
+actually 100% (i.e. :math:`\log(0.1)=-2.3`).
+
+Note also that once we compute the empirical entropy :math:`H_e` for
+an experiment, we can reuse that for calculating the potential 
+information of many different models.
 
 
 Analyzing the Wh x Pu Experiment
