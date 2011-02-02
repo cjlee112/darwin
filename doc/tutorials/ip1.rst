@@ -610,5 +610,4 @@ We can also convert these potential information estimates to bits::
    >>> Ip.get_bound() / math.log(2)
    8.7826580426245808
 
-As you can see, this matches what's shown in fig. 3d of the paper.
 
